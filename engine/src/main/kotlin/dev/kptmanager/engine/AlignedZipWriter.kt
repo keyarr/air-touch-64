@@ -28,6 +28,7 @@ class AlignedZipWriter(path: File) : Closeable {
 
     private val raf = RandomAccessFile(path, "rw")
     private val records = mutableListOf<Record>()
+    private var writeOffset: Long = 0L
 
     init {
         raf.setLength(0)
@@ -37,10 +38,15 @@ class AlignedZipWriter(path: File) : Closeable {
         val nameBytes = name.toByteArray(Charsets.UTF_8)
         val flags = if (nameBytes.any { it.toInt() and 0xFF > 0x7F }) 0x0800 else 0
         val method = if (store) 0 else 8
-        val headerOffset = raf.length()
+        val headerOffset = writeOffset
 
-        var padding = ((alignment - ((headerOffset + 30 + nameBytes.size) % alignment)) % alignment).toInt()
-        if (padding in 1..3) padding += 4
+        val padding = if (!store || alignment <= 1) {
+            0
+        } else {
+            var pad = ((alignment - ((headerOffset + 30 + nameBytes.size) % alignment)) % alignment).toInt()
+            if (pad in 1..3) pad += alignment
+            pad
+        }
 
         val crc = CRC32().apply { update(data) }.value
         val payload = if (store) data else deflate(data)
@@ -61,6 +67,8 @@ class AlignedZipWriter(path: File) : Closeable {
         writeExtra(padding)
         raf.write(payload)
 
+        writeOffset = headerOffset + 30 + nameBytes.size + padding + payload.size
+
         records += Record(
             name = nameBytes,
             method = method,
@@ -75,7 +83,8 @@ class AlignedZipWriter(path: File) : Closeable {
     }
 
     fun finish() {
-        val directoryOffset = raf.length()
+        val directoryOffset = writeOffset
+        raf.seek(directoryOffset)
         for (record in records) {
             writeLe32(0x02014b50)
             writeLe16(20)
@@ -96,7 +105,7 @@ class AlignedZipWriter(path: File) : Closeable {
             writeLe32(record.localHeaderOffset.toInt())
             raf.write(record.name)
         }
-        val directorySize = raf.length() - directoryOffset
+        val directorySize = raf.filePointer - directoryOffset
         writeLe32(0x06054b50)
         writeLe16(0)
         writeLe16(0)
@@ -140,19 +149,5 @@ class AlignedZipWriter(path: File) : Closeable {
         raf.write((value ushr 8) and 0xFF)
         raf.write((value ushr 16) and 0xFF)
         raf.write((value ushr 24) and 0xFF)
-    }
-}
-
-/**
- * Writes to a RandomAccessFile while tracking the position, so the entry header can be written
- * with sizes already known.
- */
-private class RafOutputStream(private val raf: RandomAccessFile) : OutputStream() {
-    override fun write(b: Int) {
-        raf.write(b)
-    }
-
-    override fun write(b: ByteArray, off: Int, len: Int) {
-        raf.write(b, off, len)
     }
 }

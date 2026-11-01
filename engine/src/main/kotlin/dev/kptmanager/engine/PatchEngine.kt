@@ -161,6 +161,7 @@ class PatchEngine(private val workspace: File) {
             output.parentFile?.mkdirs()
             output.delete()
             ApkSigning.sign(unsigned, output, identity)
+            assertAlignment(output)
             val certs = ApkSigning.verify(output)
             onEvent(PatchEvent.Message("Assinado e verificado (${certs.size} certificado(s))"))
             done("sign")
@@ -175,6 +176,67 @@ class PatchEngine(private val workspace: File) {
             entries = entryCount,
             steps = steps,
         )
+    }
+
+    private fun assertAlignment(apk: File) {
+        java.io.RandomAccessFile(apk, "r").use { raf ->
+            val len = raf.length()
+            val searchLen = minOf(len, 65557L).toInt()
+            val buffer = ByteArray(searchLen)
+            raf.seek(len - searchLen)
+            raf.readFully(buffer)
+
+            var eocdOffset = -1L
+            for (i in searchLen - 22 downTo 0) {
+                if (buffer[i] == 0x50.toByte() && buffer[i + 1] == 0x4b.toByte() &&
+                    buffer[i + 2] == 0x05.toByte() && buffer[i + 3] == 0x06.toByte()
+                ) {
+                    eocdOffset = len - searchLen + i
+                    break
+                }
+            }
+            check(eocdOffset >= 0) { "EOCD record not found in ${apk.name}" }
+
+            raf.seek(eocdOffset + 12)
+            val cdSize = Integer.toUnsignedLong(Integer.reverseBytes(raf.readInt()))
+            val cdOffset = Integer.toUnsignedLong(Integer.reverseBytes(raf.readInt()))
+
+            var pos = cdOffset
+            val cdEnd = cdOffset + cdSize
+            while (pos < cdEnd) {
+                raf.seek(pos)
+                val sig = Integer.reverseBytes(raf.readInt())
+                if (sig != 0x02014b50) break
+                raf.seek(pos + 10)
+                val method = java.lang.Short.reverseBytes(raf.readShort()).toInt() and 0xFFFF
+                raf.seek(pos + 28)
+                val nameLen = java.lang.Short.reverseBytes(raf.readShort()).toInt() and 0xFFFF
+                val extraLen = java.lang.Short.reverseBytes(raf.readShort()).toInt() and 0xFFFF
+                val commentLen = java.lang.Short.reverseBytes(raf.readShort()).toInt() and 0xFFFF
+                raf.seek(pos + 42)
+                val localOffset = Integer.toUnsignedLong(Integer.reverseBytes(raf.readInt()))
+                val nameBytes = ByteArray(nameLen)
+                raf.seek(pos + 46)
+                raf.readFully(nameBytes)
+                val name = String(nameBytes, Charsets.UTF_8)
+                pos += 46 + nameLen + extraLen + commentLen
+
+                raf.seek(localOffset + 26)
+                val locNameLen = java.lang.Short.reverseBytes(raf.readShort()).toInt() and 0xFFFF
+                val locExtraLen = java.lang.Short.reverseBytes(raf.readShort()).toInt() and 0xFFFF
+                val dataOffset = localOffset + 30 + locNameLen + locExtraLen
+
+                if (name.endsWith(".so")) {
+                    check(dataOffset % 16384L == 0L) {
+                        "Native library $name is not 16KB aligned (offset $dataOffset)"
+                    }
+                } else if (name == "resources.arsc" || method == 0) {
+                    check(dataOffset % 4L == 0L) {
+                        "Stored entry $name is not 4-byte aligned (offset $dataOffset)"
+                    }
+                }
+            }
+        }
     }
 
     private fun writeApk(file: File, entries: Map<String, ByteArray>, onEvent: (PatchEvent) -> Unit) {

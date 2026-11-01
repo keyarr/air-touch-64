@@ -94,6 +94,7 @@ object ApkSigning {
             .setV2SigningEnabled(true)
             .setV3SigningEnabled(true)
             .setMinSdkVersion(26)
+            .setAlignmentPreserved(true)
             .build()
             .sign()
     }
