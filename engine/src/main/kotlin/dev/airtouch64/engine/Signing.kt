@@ -1,4 +1,4 @@
-package dev.kptmanager.engine
+package dev.airtouch64.engine
 
 import com.android.apksig.ApkSigner
 import com.android.apksig.ApkVerifier
@@ -29,7 +29,7 @@ class SigningIdentity(
 
 /** Persistent self signed key, created on first use and reused for every patch. */
 object SigningStore {
-    private const val ALIAS = "kptmanager"
+    private const val ALIAS = "airtouch64"
     private const val KEYSTORE = "signing.p12"
     private const val PASSWORD = "password"
 
@@ -57,7 +57,7 @@ object SigningStore {
             .let { Base64.getEncoder().encodeToString(it) }.toCharArray()
         val keyPair = KeyPairGenerator.getInstance("RSA").apply { initialize(3072) }.generateKeyPair()
         val now = System.currentTimeMillis()
-        val subject = X500Name("CN=PS Touch Manager, O=kptmanager")
+        val subject = X500Name("CN=Air Touch 64, O=airtouch64")
         val builder = JcaX509v3CertificateBuilder(
             subject,
             BigInteger.valueOf(now),
@@ -71,7 +71,7 @@ object SigningStore {
         )
         val keyStore = KeyStore.getInstance("PKCS12")
         keyStore.load(null, null)
-        keyStore.setKeyEntry("kptmanager", keyPair.private, passwordChars, arrayOf(certificate))
+        keyStore.setKeyEntry(ALIAS, keyPair.private, passwordChars, arrayOf(certificate))
         keyStoreFile.outputStream().use { keyStore.store(it, passwordChars) }
         passwordFile.writeText(
             Base64.getEncoder().encodeToString(String(passwordChars).toByteArray(Charsets.UTF_8))
@@ -83,7 +83,7 @@ object SigningStore {
 object ApkSigning {
     fun sign(input: File, output: File, identity: SigningIdentity) {
         val signer = ApkSigner.SignerConfig.Builder(
-            "kptmanager",
+            "airtouch64",
             identity.privateKey,
             listOf(identity.certificate),
         ).build()

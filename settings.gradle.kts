@@ -14,6 +14,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "kptmanager"
+rootProject.name = "air-touch-64"
 include(":app")
 include(":engine")

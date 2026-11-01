@@ -1,4 +1,4 @@
-package dev.kptmanager.app
+package dev.airtouch64.app
 
 import android.app.Application
 import androidx.compose.runtime.getValue
@@ -6,10 +6,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import dev.kptmanager.engine.BundleManifest
-import dev.kptmanager.engine.PatchEvent
-import dev.kptmanager.engine.PatchResult
-import dev.kptmanager.engine.SourceInspection
+import dev.airtouch64.engine.BundleManifest
+import dev.airtouch64.engine.PatchEvent
+import dev.airtouch64.engine.PatchResult
+import dev.airtouch64.engine.SourceInspection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext

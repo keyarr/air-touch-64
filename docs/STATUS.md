@@ -1,6 +1,6 @@
 # Current state
 
-Snapshot of what exists in `kptmanager`, what was verified and what is still broken.
+Snapshot of what exists in `air-touch-64`, what was verified and what is still broken.
 
 ## Decision
 
@@ -73,7 +73,7 @@ export AIR_ADT_TARGET='-target apk-captive-runtime'
 export AIR_ADT_ARCH_ARGS='-arch armv8'
 export AIR_ADT_SIGNING_ARGS='-storetype JKS -keystore /home/erick/.android/debug.keystore -storepass android -keypass android -alias androiddebugkey'
 export BUILD_DIR=/tmp/pscc-bundle-out
-export SOURCE_APK=/home/erick/Documentos/projetos/kptmanager/air.com.adobe.pstouchphone_1.3.7-1003007_minAPI14_armeabi-v7a_apkmirror.com.apk
+export SOURCE_APK=$PWD/air.com.adobe.pstouchphone_1.3.7-1003007_minAPI14_armeabi-v7a_apkmirror.com.apk
 ```
 
 Gradle needs Java 21 (`JAVA_HOME=/usr/lib/jvm/java-21-openjdk`). JDK 17 is not installed, so the

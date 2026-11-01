@@ -16,7 +16,7 @@ kotlin {
 }
 
 application {
-    mainClass.set("dev.kptmanager.engine.MainKt")
+    mainClass.set("dev.airtouch64.engine.MainKt")
 }
 
 dependencies {

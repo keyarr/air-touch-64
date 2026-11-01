@@ -17,10 +17,10 @@ fun releaseSigningProperty(name: String, environmentName: String): String? =
     releaseSigningProperties.getProperty(name)
         ?: providers.environmentVariable(environmentName).orNull
 
-val releaseStoreFile = releaseSigningProperty("storeFile", "KPT_RELEASE_STORE_FILE")
-val releaseStorePassword = releaseSigningProperty("storePassword", "KPT_RELEASE_STORE_PASSWORD")
-val releaseKeyAlias = releaseSigningProperty("keyAlias", "KPT_RELEASE_KEY_ALIAS")
-val releaseKeyPassword = releaseSigningProperty("keyPassword", "KPT_RELEASE_KEY_PASSWORD")
+val releaseStoreFile = releaseSigningProperty("storeFile", "AIRTOUCH_RELEASE_STORE_FILE")
+val releaseStorePassword = releaseSigningProperty("storePassword", "AIRTOUCH_RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = releaseSigningProperty("keyAlias", "AIRTOUCH_RELEASE_KEY_ALIAS")
+val releaseKeyPassword = releaseSigningProperty("keyPassword", "AIRTOUCH_RELEASE_KEY_PASSWORD")
 val releaseSigningConfigured = !releaseStoreFile.isNullOrBlank() &&
     !releaseStorePassword.isNullOrBlank() &&
     !releaseKeyAlias.isNullOrBlank() &&
@@ -28,11 +28,11 @@ val releaseSigningConfigured = !releaseStoreFile.isNullOrBlank() &&
     rootProject.file(releaseStoreFile.orEmpty()).isFile
 
 android {
-    namespace = "dev.kptmanager.app"
+    namespace = "dev.airtouch64.app"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "dev.kptmanager"
+        applicationId = "dev.airtouch64"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

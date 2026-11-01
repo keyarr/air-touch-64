@@ -1,4 +1,4 @@
-package dev.kptmanager.engine
+package dev.airtouch64.engine
 
 import java.io.File
 
@@ -15,7 +15,7 @@ fun main(args: Array<String>) {
     val output = File(args[2])
     val keyDir = File(args.getOrElse(3) { "build/test-keys" })
 
-    val engine = PatchEngine(File(System.getProperty("java.io.tmpdir"), "kptmanager-engine"))
+    val engine = PatchEngine(File(System.getProperty("java.io.tmpdir"), "airtouch64-engine"))
     val manifest = engine.readManifest(bundle)
     println("bundle: ${manifest.name} ${manifest.version}")
 

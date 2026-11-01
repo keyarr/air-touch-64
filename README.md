@@ -1,4 +1,4 @@
-# kptmanager
+# air-touch-64
 
 On-device patcher that turns a user-supplied Photoshop Touch APK into the PS Touch Revived ARM64 build using a prebuilt patch bundle.
 

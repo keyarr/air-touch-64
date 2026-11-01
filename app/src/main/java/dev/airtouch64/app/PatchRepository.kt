@@ -1,15 +1,15 @@
-package dev.kptmanager.app
+package dev.airtouch64.app
 
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
-import dev.kptmanager.engine.BundleManifest
-import dev.kptmanager.engine.PatchEngine
-import dev.kptmanager.engine.PatchEvent
-import dev.kptmanager.engine.PatchResult
-import dev.kptmanager.engine.SigningIdentity
-import dev.kptmanager.engine.SigningStore
-import dev.kptmanager.engine.SourceInspection
+import dev.airtouch64.engine.BundleManifest
+import dev.airtouch64.engine.PatchEngine
+import dev.airtouch64.engine.PatchEvent
+import dev.airtouch64.engine.PatchResult
+import dev.airtouch64.engine.SigningIdentity
+import dev.airtouch64.engine.SigningStore
+import dev.airtouch64.engine.SourceInspection
 import java.io.File
 
 class PatchRepository(private val context: Context) {

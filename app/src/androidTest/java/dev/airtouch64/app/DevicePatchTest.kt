@@ -1,8 +1,8 @@
-package dev.kptmanager.app
+package dev.airtouch64.app
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import dev.kptmanager.engine.ApkSigning
+import dev.airtouch64.engine.ApkSigning
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

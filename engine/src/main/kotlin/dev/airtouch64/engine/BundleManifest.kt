@@ -1,4 +1,4 @@
-package dev.kptmanager.engine
+package dev.airtouch64.engine
 
 import kotlinx.serialization.Serializable
 

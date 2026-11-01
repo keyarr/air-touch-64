@@ -1,4 +1,4 @@
-package dev.kptmanager.app
+package dev.airtouch64.app
 
 import android.content.Intent
 import android.net.Uri
@@ -52,7 +52,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
-import dev.kptmanager.engine.PatchResult
+import dev.airtouch64.engine.PatchResult
 import java.io.File
 
 class MainActivity : ComponentActivity() {
@@ -166,13 +166,13 @@ private fun HomeScreen(
                     .background(MaterialTheme.colorScheme.primary, CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("PS", fontWeight = FontWeight.Bold, color = Color(0xFF101418))
+                Text("AT", fontWeight = FontWeight.Bold, color = Color(0xFF101418))
             }
             Spacer(Modifier.width(12.dp))
             Column {
-                Text("PS Touch Manager", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Text("Air Touch 64", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 Text(
-                    "Patcher local do PS Touch ARM64",
+                    "Patcher local ARM64 para PS Touch",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
