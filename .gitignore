@@ -4,5 +4,8 @@ build/
 app/build/
 engine/build/
 local.properties
+keystore.properties
+*.keystore
+*.jks
 *.apk
 *.log
