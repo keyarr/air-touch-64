@@ -37,42 +37,23 @@ tools/make_bundle.py         bundle generator and reproducibility self-check
 
 - Bundle generation from the host build: self-check rebuilds every entry of the final APK from
   source APK + bundle and aborts on any mismatch. Passes.
-- Host engine run produced `build/ps-touch-test.apk`:
-  - 32,047,234 bytes, SHA-256 `c8cdc0a393ae47f250d100252f0bdc16f8b7b2502b6c0345d0efafe00b932212`
+- Host engine run produces signed, aligned APK:
   - 345 entries, contents byte-identical to the host build for every non-signature entry
-    (SWF compared decompressed)
-  - apksig verification passes for min platform 26
-- `apksigner verify` from build-tools 37 fails with `Missing META-INF/MANIFEST.MF` unless
-  `--min-sdk-version 26` is passed. Expected: v1 signing is disabled, only v2/v3 are written.
-
-Bundle contents:
-
-- 80 shell entries (AIR ARM64 runtime, manifest, resources.arsc, dex, ANE files, `res/`)
-- 13 resource overrides (`about.txt`, `cabmod`, localized `zstrings`, three filter shaders)
-- 1 dex patch (`classes.dex`, 98,753 bytes) for the Android 16 insets fix
-- 1 native library (`lib/arm64-v8a/libTTPixelExtensionAndroid.so`, 41,176 bytes)
-- 1 SWF patch (17,689 bytes, source body -> patched body)
+  - ZIP alignment verified: shared libraries aligned to 16 KB boundaries, stored entries to 4 bytes
+  - apksig verification passes (v2 and v3 schemes)
+- Android module compiles and packages cleanly.
+- Full on-device patching pipeline verified on SM-S928B (Galaxy S24 Ultra, Android 16) via
+  `DevicePatchTest`:
+  - Bundle read from APK asset
+  - BouncyCastle certificate generation and PKCS12 KeyStore on Android runtime
+  - SWF CWS inflate/bspatch/deflate, DEX bspatch, resource merge, 16 KB aligned ZIP write
+  - apksig v2/v3 signing and verification on device
+- `psccrevived` compiles with `FnBrowseImages.java` anonymous `Runnable` restored.
 
 ## Known problems
 
-1. **ZIP alignment is wrong for the extension library.** `resources.arsc` and `libCore.so` end up
-   aligned, `libTTPixelExtensionAndroid.so` ends at 180 mod 16384. The padding is computed from
-   `RandomAccessFile.length()` before the header is written; compute it from the explicit write
-   position instead and assert every stored native library after assembly.
-2. **The app module was never compiled.** `MainActivity.kt` and `PatchViewModel.kt` are written but
-   `:app:assembleDebug` has not run, so compile errors are unknown.
-3. **apksig/BouncyCastle on Android is unproven.** The engine ran on the JVM only. Signing and
-   certificate generation must be exercised on the device.
-4. **`psccrevived` HEAD does not compile.** At `80554cf`,
-   `native/src/com/adobe/ttpixel/extension/cameraroll/FnBrowseImages.java:91` calls
-   `new FnBrowseImages$1(...)` but the anonymous class no longer exists in the source. The bundle
-   was built from a throwaway worktree at `/tmp/pscc-bundle` with the `javac` step removed and the
-   checked-in `native/library.jar` reused (identical to the last successful build). Fix this in
-   `psccrevived` before rebuilding the bundle.
-5. **No release signing for the manager APK.** `app/build.gradle.kts` has no `signingConfig` yet.
-6. **No foreground service.** Patching runs in the ViewModel; the app must stay open.
-7. `kptmanager` is not a git repository yet, so nothing is committed.
-8. The AIR startup splash remains (needs a commercial AIR SDK license), same limitation as
+1. **No foreground service.** Patching runs in the ViewModel; the app must stay open during the run.
+2. The AIR startup splash remains (needs a commercial AIR SDK license), same limitation as
    `psccrevived`.
 
 ## Build environment used
@@ -122,9 +103,5 @@ $PWD/build/test-keys"
 
 ## Next steps
 
-1. Fix `AlignedZipWriter` padding and add a post-assembly alignment assertion.
-2. Build the app module and fix compile errors.
-3. Install on the SM-S928B (`RXCY904E9PM`) and run a full patch job; validate apksig and
-   BouncyCastle on Android.
-4. Fix `FnBrowseImages.java` in `psccrevived` so the bundle can be rebuilt from a clean checkout.
-5. Add release signing for the manager and a one-sentence README with the build commands.
+1. Optional foreground service for background patch jobs.
+2. User-facing release build and distribution.
