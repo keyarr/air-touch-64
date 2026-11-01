@@ -52,7 +52,7 @@ class PatchViewModel(application: Application) : AndroidViewModel(application) {
             state = try {
                 UiState.Home(manifest = withContext(Dispatchers.IO) { repository.manifest() })
             } catch (error: Exception) {
-                UiState.Failed("Bundle inválido: ${error.message}", emptyList())
+                UiState.Failed(getApplication<Application>().getString(R.string.invalid_bundle_details, error.message), emptyList())
             }
         }
     }
@@ -71,7 +71,7 @@ class PatchViewModel(application: Application) : AndroidViewModel(application) {
             }
             state = result.fold(
                 onSuccess = { selection -> home.copy(source = selection, importing = false) },
-                onFailure = { error -> home.copy(importing = false, error = error.message ?: "Falha ao importar") },
+                onFailure = { error -> home.copy(importing = false, error = error.message ?: getApplication<Application>().getString(R.string.import_failed)) },
             )
         }
     }
@@ -115,7 +115,7 @@ class PatchViewModel(application: Application) : AndroidViewModel(application) {
                 state = UiState.Done(result)
             } catch (error: Exception) {
                 val running = state as? UiState.Running
-                state = UiState.Failed(error.message ?: "Falha desconhecida", running?.log.orEmpty())
+                state = UiState.Failed(error.message ?: getApplication<Application>().getString(R.string.unknown_failure), running?.log.orEmpty())
             }
         }
     }
@@ -124,7 +124,7 @@ class PatchViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val manifest = withContext(Dispatchers.IO) { runCatching { repository.manifest() }.getOrNull() }
             state = if (manifest == null) {
-                UiState.Failed("Bundle inválido", emptyList())
+                UiState.Failed(getApplication<Application>().getString(R.string.invalid_bundle), emptyList())
             } else {
                 UiState.Home(manifest = manifest)
             }

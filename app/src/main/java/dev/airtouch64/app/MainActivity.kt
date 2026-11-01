@@ -47,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -84,16 +85,16 @@ class MainActivity : ComponentActivity() {
         if (uri == null || file == null) return@registerForActivityResult
         runCatching {
             contentResolver.openOutputStream(uri)?.use { output -> file.inputStream().use { it.copyTo(output) } }
-                ?: error("destino indisponível")
-            Toast.makeText(this, "APK salvo", Toast.LENGTH_SHORT).show()
+                ?: error(getString(R.string.save_destination_unavailable))
+            Toast.makeText(this, getString(R.string.apk_saved), Toast.LENGTH_SHORT).show()
         }.onFailure {
-            Toast.makeText(this, "Falha ao salvar: ${it.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.save_failed, it.message), Toast.LENGTH_LONG).show()
         }
     }
 
     private fun install(file: File) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
-            Toast.makeText(this, "Permita instalar apps desconhecidos para este app", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.allow_unknown_apps), Toast.LENGTH_LONG).show()
             startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
             return
         }
@@ -102,7 +103,7 @@ class MainActivity : ComponentActivity() {
             .setDataAndType(uri, "application/vnd.android.package-archive")
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { startActivity(intent) }
-            .onFailure { Toast.makeText(this, "Sem instalador disponível", Toast.LENGTH_LONG).show() }
+            .onFailure { Toast.makeText(this, getString(R.string.no_installer), Toast.LENGTH_LONG).show() }
     }
 }
 
@@ -154,9 +155,9 @@ private fun HomeScreen(state: UiState.Home, onPick: (Uri) -> Unit, onStart: () -
         val source = state.source
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
             Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("APK de origem", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.source_apk), style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "Apenas o Photoshop Touch 1.3.7 é suportado",
+                    stringResource(R.string.supported_version),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -166,40 +167,40 @@ private fun HomeScreen(state: UiState.Home, onPick: (Uri) -> Unit, onStart: () -
                         enabled = !state.importing,
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text(if (source == null) "Escolher APK" else "Trocar APK", maxLines = 1)
+                        Text(stringResource(if (source == null) R.string.choose_apk else R.string.change_apk), maxLines = 1)
                     }
                     OutlinedButton(
                         onClick = { showApkHelp = true },
                         enabled = !state.importing,
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text("Não tenho APK", maxLines = 1)
+                        Text(stringResource(R.string.no_apk), maxLines = 1)
                     }
                 }
                 if (state.importing) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         Spacer(Modifier.width(10.dp))
-                        Text("Lendo e verificando APK…", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.reading_apk), style = MaterialTheme.typography.bodyMedium)
                     }
                 }
                 if (source != null) {
                     HorizontalDivider()
                     Text(source.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text(
-                        "SHA-256 ${source.inspection.sha256.take(16)}… · ${source.inspection.size / 1024 / 1024} MiB · ${source.inspection.entryCount} entradas",
+                        stringResource(R.string.source_details, source.inspection.sha256.take(16), source.inspection.size / 1024 / 1024, source.inspection.entryCount),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     val supported = source.inspection.supported
                     Text(
-                        if (supported) "APK compatível" else "APK incompatível com este bundle",
+                        stringResource(if (supported) R.string.apk_compatible else R.string.apk_incompatible),
                         style = MaterialTheme.typography.labelLarge,
                         color = if (supported) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.error,
                     )
                     if (!supported && source.inspection.missingEntries.isNotEmpty()) {
                         Text(
-                            "Arquivos ausentes: ${source.inspection.missingEntries.joinToString(", ")}",
+                            stringResource(R.string.missing_files, source.inspection.missingEntries.joinToString(", ")),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
                         )
@@ -212,15 +213,15 @@ private fun HomeScreen(state: UiState.Home, onPick: (Uri) -> Unit, onStart: () -
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
             Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("Patches incluídos", style = MaterialTheme.typography.titleMedium)
-                    Text("Ver. 1.0.0", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.included_patches), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.version, "1.0.0"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 state.manifest.steps.forEachIndexed { index, step ->
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("${index + 1}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(step.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-                            Text(step.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stepTitle(step.id, step.name), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                            Text(stepDescription(step.id, step.description), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -228,7 +229,7 @@ private fun HomeScreen(state: UiState.Home, onPick: (Uri) -> Unit, onStart: () -
         }
 
         Text(
-            "O APK de saída usa uma chave gerada neste aparelho. Para instalar, desinstale antes a versão assinada pela Adobe.",
+            stringResource(R.string.install_note),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -236,7 +237,7 @@ private fun HomeScreen(state: UiState.Home, onPick: (Uri) -> Unit, onStart: () -
             onClick = onStart,
             enabled = source?.inspection?.supported == true && !state.importing,
             modifier = Modifier.fillMaxWidth().height(56.dp),
-        ) { Text("Aplicar patches") }
+        ) { Text(stringResource(R.string.apply_patches)) }
     }
     if (showApkHelp) ApkHelpDialog(onDismiss = { showApkHelp = false })
 }
@@ -255,13 +256,41 @@ private fun AppHeader() {
 }
 
 @Composable
+private fun stepTitle(id: String, fallback: String): String {
+    val resource = when (id) {
+        "validate" -> R.string.step_validate
+        "swf" -> R.string.step_swf
+        "dex" -> R.string.step_dex
+        "resources" -> R.string.step_resources
+        "assemble" -> R.string.step_assemble
+        "sign" -> R.string.step_sign
+        else -> return fallback
+    }
+    return stringResource(resource)
+}
+
+@Composable
+private fun stepDescription(id: String, fallback: String): String {
+    val resource = when (id) {
+        "validate" -> R.string.step_validate_description
+        "swf" -> R.string.step_swf_description
+        "dex" -> R.string.step_dex_description
+        "resources" -> R.string.step_resources_description
+        "assemble" -> R.string.step_assemble_description
+        "sign" -> R.string.step_sign_description
+        else -> return fallback
+    }
+    return stringResource(resource)
+}
+
+@Composable
 private fun ApkHelpDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Você pode obter aqui:")
+                Text(stringResource(R.string.apk_download_options))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = {
@@ -279,13 +308,13 @@ private fun ApkHelpDialog(onDismiss: () -> Unit) {
                     ) { Text("Apkpure", maxLines = 1) }
                 }
                 Text(
-                    "O Air Touch 64 não tem vínculo, patrocínio ou afiliação com o APKMirror ou o APKPure. Os links levam a sites de terceiros.",
+                    stringResource(R.string.third_party_disclaimer),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Fechar") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) } },
     )
 }
 
@@ -295,8 +324,8 @@ private fun RunningScreen(state: UiState.Running) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.5.dp)
             Column {
-                Text("Aplicando patches", style = MaterialTheme.typography.titleLarge)
-                Text("Não feche o app durante o processamento.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.applying_patches), style = MaterialTheme.typography.titleLarge)
+                Text(stringResource(R.string.do_not_close), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         val total = state.manifest.steps.size
@@ -314,12 +343,12 @@ private fun RunningScreen(state: UiState.Running) {
                     val running = step.id == state.currentStep
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(
-                            when { done -> "Concluído · ${step.name}"; running -> "Em andamento · ${step.name}"; else -> step.name },
+                            when { done -> stringResource(R.string.step_done, stepTitle(step.id, step.name)); running -> stringResource(R.string.step_running, stepTitle(step.id, step.name)); else -> stepTitle(step.id, step.name) },
                             style = MaterialTheme.typography.bodyLarge,
                             color = when { done -> MaterialTheme.colorScheme.tertiary; running -> MaterialTheme.colorScheme.primary; else -> MaterialTheme.colorScheme.onSurfaceVariant },
                             fontWeight = if (running) FontWeight.SemiBold else FontWeight.Normal,
                         )
-                        Text(step.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stepDescription(step.id, step.description), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -332,8 +361,8 @@ private fun RunningScreen(state: UiState.Running) {
 private fun LogCard(log: List<String>) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Registro", style = MaterialTheme.typography.titleSmall)
-            if (log.isEmpty()) Text("Aguardando…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.log), style = MaterialTheme.typography.titleSmall)
+            if (log.isEmpty()) Text(stringResource(R.string.waiting), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             log.takeLast(40).forEach { line ->
                 Text(line, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -344,32 +373,32 @@ private fun LogCard(log: List<String>) {
 @Composable
 private fun DoneScreen(result: PatchResult, onInstall: (File) -> Unit, onSave: (File) -> Unit, onReset: () -> Unit) {
     ContentColumn {
-        Text("APK pronto", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.tertiary)
-        Text("Os patches foram aplicados e o arquivo está pronto.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(stringResource(R.string.apk_ready), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.tertiary)
+        Text(stringResource(R.string.patches_applied), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
             Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                LabeledValue("Arquivo", result.output.name)
-                LabeledValue("Tamanho", "${result.size / 1024 / 1024} MiB")
-                LabeledValue("Entradas", result.entries.toString())
+                LabeledValue(stringResource(R.string.file), result.output.name)
+                LabeledValue(stringResource(R.string.size), "${result.size / 1024 / 1024} MiB")
+                LabeledValue(stringResource(R.string.entries), result.entries.toString())
                 LabeledValue("SHA-256", result.sha256.chunked(32).joinToString("\n"))
-                LabeledValue("Assinatura", result.signerFingerprint.chunked(32).joinToString("\n"))
+                LabeledValue(stringResource(R.string.signature), result.signerFingerprint.chunked(32).joinToString("\n"))
             }
         }
-        Button(onClick = { onInstall(result.output) }, modifier = Modifier.fillMaxWidth().height(56.dp)) { Text("Instalar") }
-        OutlinedButton(onClick = { onSave(result.output) }, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Salvar APK") }
-        TextButton(onClick = onReset, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Voltar") }
+        Button(onClick = { onInstall(result.output) }, modifier = Modifier.fillMaxWidth().height(56.dp)) { Text(stringResource(R.string.install)) }
+        OutlinedButton(onClick = { onSave(result.output) }, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text(stringResource(R.string.save_apk)) }
+        TextButton(onClick = onReset, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text(stringResource(R.string.back)) }
     }
 }
 
 @Composable
 private fun FailedScreen(state: UiState.Failed, onReset: () -> Unit) {
     ContentColumn {
-        Text("Não foi possível concluir", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.error)
+        Text(stringResource(R.string.could_not_complete), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.error)
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
             Text(state.message, Modifier.fillMaxWidth().padding(16.dp), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onErrorContainer)
         }
         if (state.log.isNotEmpty()) LogCard(state.log)
-        Button(onClick = onReset, modifier = Modifier.fillMaxWidth().height(56.dp)) { Text("Voltar") }
+        Button(onClick = onReset, modifier = Modifier.fillMaxWidth().height(56.dp)) { Text(stringResource(R.string.back)) }
     }
 }
 

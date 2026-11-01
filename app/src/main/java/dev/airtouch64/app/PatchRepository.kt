@@ -47,7 +47,7 @@ class PatchRepository(private val context: Context) {
         val target = File(dir, name.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "source.apk" })
         context.contentResolver.openInputStream(uri)?.use { input ->
             target.outputStream().use { output -> input.copyTo(output) }
-        } ?: error("Não foi possível abrir o APK selecionado")
+        } ?: error(context.getString(R.string.open_apk_failed))
         return target
     }
 
