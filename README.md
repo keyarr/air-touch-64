@@ -61,4 +61,4 @@ JAVA_HOME=/usr/lib/jvm/java-21-openjdk ./gradlew :app:connectedDebugAndroidTest
 
 ## Releases
 
-See [GitHub Releases](https://github.com/keyarr/air-touch-64/releases). Release builds use a private keystore configured in `keystore.properties` or through the `AIRTOUCH_RELEASE_*` environment variables. See [`keystore.properties.example`](keystore.properties.example); do not commit the keystore or credentials.
+See [GitHub Releases](https://github.com/keyarr/air-touch-64/releases). Release builds use a private keystore configured in `keystore.properties` or through the `AIRTOUCH_RELEASE_*` environment variables.
