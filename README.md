@@ -1,6 +1,6 @@
 # air-touch-64
 
-On-device patcher that turns a user-supplied Photoshop Touch APK into the PS Touch Revived ARM64 build using a prebuilt patch bundle.
+Android app that converts a supported Photoshop Touch 1.3.7 APK into the PS Touch Revived ARM64 APK using a bundled patch set.
 
 Build:
 
@@ -8,13 +8,13 @@ Build:
 JAVA_HOME=/usr/lib/jvm/java-21-openjdk ./gradlew :app:assembleDebug
 ```
 
-Test on host:
+Run the host patcher (replace `SOURCE.apk` with the supported original APK):
 
 ```sh
 JAVA_HOME=/usr/lib/jvm/java-21-openjdk ./gradlew :engine:run --args="SOURCE.apk app/src/main/assets/bundle.zip build/out.apk build/test-keys"
 ```
 
-Test on device:
+Run device instrumentation tests:
 
 ```sh
 JAVA_HOME=/usr/lib/jvm/java-21-openjdk ./gradlew :app:connectedDebugAndroidTest

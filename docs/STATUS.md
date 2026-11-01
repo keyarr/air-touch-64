@@ -1,115 +1,79 @@
-# Current state
+# Project status
 
-Snapshot of what exists in `air-touch-64`, what was verified and what is still broken.
+## Product
 
-## Decision
+Air Touch 64 is an Android patcher for Photoshop Touch. The user selects the original APK; the app transforms it into the PS Touch Revived ARM64 APK using the bundled patch set. The original Adobe APK is not included.
 
-- Product: on-device patcher for PS Touch, Morphe-style flow. The user supplies the original
-  Adobe APK; the app never ships it.
-- `adt`, FFDec and the NDK cannot run on Android, so the host produces a **bundle** with what the
-  phone cannot generate: AIR ARM64 runtime shell, ARM64 extension library, SWF/DEX deltas and
-  resource overrides.
-- The app applies the bundle to the selected APK with hash checks before and after every step,
-  rebuilds the ZIP with alignment, signs with a persistent on-device key and hands off to the
-  installer.
-- Compiling ActionScript on device was ruled out for now (would need an embedded JVM plus FFDec,
-  see `psccrevived/docs/PS_TOUCH_MANAGER_*`).
-
-## Repository layout
+The app supports Android 8.0 (API 26) and newer, and has Portuguese and English strings. It accepts only the source APK whose SHA-256 is listed in the bundle manifest:
 
 ```text
-engine/                      Kotlin/JVM patch engine, no Android dependencies
-  BsPatch.kt                 bsdiff4 (sign/magnitude int64) patch application
-  Swf.kt                     CWS inflate/deflate
-  AlignedZipWriter.kt        ZIP writer with per-entry alignment
-  Signing.kt                 PKCS12 key creation, apksig v2/v3 signing and verification
-  PatchEngine.kt             validation, SWF/DEX patches, resource merge, assembly, signing
-  Main.kt                    host runner used for validation
-app/                         Compose UI
-  PatchRepository.kt         asset bundle, SAF import, keystore and output paths
-  PatchViewModel.kt          state machine: Home, Running, Done, Failed
-  MainActivity.kt            screens, install and save handoff
-app/src/main/assets/bundle.zip   generated bundle, 14,123,980 bytes
-tools/make_bundle.py         bundle generator and reproducibility self-check
+c57e409493f46f4b9404678a777e23cee7fedcf921427435f4767efda5823a85
 ```
 
-## Verified
+This is the Photoshop Touch 1.3.7 APK variant used to create the bundle. Other repackaged or region-specific APKs are rejected even if they have the same app version.
 
-- Bundle generation from the host build: self-check rebuilds every entry of the final APK from
-  source APK + bundle and aborts on any mismatch. Passes.
-- Host engine run produces signed, aligned APK:
-  - 345 entries, contents byte-identical to the host build for every non-signature entry
-  - ZIP alignment verified: shared libraries aligned to 16 KB boundaries, stored entries to 4 bytes
-  - apksig verification passes (v1, v2 and v3 schemes enabled)
-- Android module compiles and packages cleanly.
-- Full on-device patching pipeline verified on SM-S928B (Galaxy S24 Ultra, Android 16) via
-  `DevicePatchTest`:
-  - Bundle read from APK asset
-  - BouncyCastle certificate generation and PKCS12 KeyStore on Android runtime
-  - Raw SWF bspatch, DEX bspatch, resource merge, 16 KB aligned ZIP write
-  - apksig v1/v2/v3 signing and verification on device
-- On-device launch verified: patched APK installed and run on SM-S928B; Harman AIR runtime
-  package integrity check (`AIRRuntimeCheck`) passes without "package may have been modified"
-  warning because the SWF patch operates directly on the compressed CWS file, preserving the
-  exact bytes signed in `META-INF/AIR/license.txt`.
-- Native extension library includes particle blending alpha accumulation fix (`da3f68d`).
-- ActionScript includes paint halo accumulation fix (`96c3fc1`) with brush opacity in the working
-  bitmap preview (`85547f1`).
-- Resources include title capitalization and repository link updates (`acf8489`).
-- `psccrevived` compiles with `FnBrowseImages.java` anonymous `Runnable` restored.
+## App flow
 
-## Known problems
+1. The user picks an APK through Android's document picker. The app copies it to its cache and checks its SHA-256 and required entries.
+2. The engine applies the SWF patch, DEX patches and resource overrides, then assembles the AIR ARM64 shell and native libraries from the bundle.
+3. The APK is aligned, signed with a persistent per-install key, and verified on device.
+4. The user can open the Android package installer or save the APK through the system document picker.
 
-1. **No foreground service.** Patching runs in the ViewModel; the app must stay open during the run.
-2. The AIR startup splash remains (needs a commercial AIR SDK license), same limitation as
-   `psccrevived`.
+Patching runs in the ViewModel, not a foreground service. Keep Air Touch 64 open while patching. The signing key is stored in the app's private files; uninstalling the app removes it. APKs produced by different app installations therefore have different signing certificates and cannot update one another in place.
 
-## Build environment used
+The source Android package installer may require the user to allow installs from Air Touch 64. The generated APK uses a different signing key from Adobe's original APK, so it installs as a separate app rather than updating the original.
+
+## Project pieces
+
+- `app/`: Compose UI, APK import/export, install handoff and on-device orchestration.
+- `engine/`: Kotlin patch engine shared by Android and the host runner. It validates inputs and patch outputs, writes aligned ZIP entries, signs and verifies the output.
+- `app/src/main/assets/bundle.zip`: format 1 bundle, about 13.5 MiB, named `PS Touch Revived ARM64` version `1.0.0`.
+- `tools/make_bundle.py`: host-side bundle generator. It checks that the shell, source resources, overrides and binary deltas reproduce the final APK entry for entry.
+
+## Build and run
+
+The Gradle wrapper uses Gradle 8.13. The project targets Java 17 bytecode; Java 21 is the configured local runtime used for the commands below.
+
+Build the debug app:
 
 ```sh
-export AIR_SDK=/home/erick/airsdk/AIRSDK_51.5.1
-export ANDROID_SDK_ROOT=/home/erick/Android/Sdk
-export FFDEC_JAR=/home/erick/Documentos/projetos/psccrevived/tools/jpexs/ffdec-cli.jar
-export SOURCE_SWF_SHA256=d941eab1489b086fadeddfa921d0ffd031a69113b058e81482732c9641664f21
-export APP_DESCRIPTOR=/tmp/pscc-bundle/experiments/ttpixel-arm64-test/application-android16.xml
-export AIR_ADT_TARGET='-target apk-captive-runtime'
-export AIR_ADT_ARCH_ARGS='-arch armv8'
-export AIR_ADT_SIGNING_ARGS='-storetype JKS -keystore /home/erick/.android/debug.keystore -storepass android -keypass android -alias androiddebugkey'
-export BUILD_DIR=/tmp/pscc-bundle-out
-export SOURCE_APK=$PWD/air.com.adobe.pstouchphone_1.3.7-1003007_minAPI14_armeabi-v7a_apkmirror.com.apk
+JAVA_HOME=/usr/lib/jvm/java-21-openjdk ./gradlew :app:assembleDebug
 ```
 
-Gradle needs Java 21 (`JAVA_HOME=/usr/lib/jvm/java-21-openjdk`). JDK 17 is not installed, so the
-engine targets 17 with the 21 toolchain.
-
-Host build outputs kept at:
-
-- `/tmp/pscc-bundle-out/base-adt.apk` (adt shell, before insets and extension library)
-- `/tmp/pscc-bundle-out/ttpixel-arm64-clean.apk` (final host build)
-- `/tmp/pscc-bundle-out/base-insets-unsigned.apk`
-- `/tmp/pscc-bundle-build.log`
-
-Generate the bundle:
+Run the host patcher with the supported source APK:
 
 ```sh
-python3 tools/make_bundle.py \
-  --base /tmp/pscc-bundle-out/base-adt.apk \
-  --final /tmp/pscc-bundle-out/ttpixel-arm64-clean.apk \
-  --source air.com.adobe.pstouchphone_1.3.7-1003007_minAPI14_armeabi-v7a_apkmirror.com.apk \
-  --output app/src/main/assets/bundle.zip
+JAVA_HOME=/usr/lib/jvm/java-21-openjdk ./gradlew :engine:run --args="SOURCE.apk app/src/main/assets/bundle.zip build/out.apk build/test-keys"
 ```
 
-Run the engine on the host:
+Run the Android instrumentation test. It expects the same supported source APK at `/data/local/tmp/pstouch-source.apk` on the connected device:
 
 ```sh
-JAVA_HOME=/usr/lib/jvm/java-21-openjdk ./gradlew :engine:run --args="\
-$PWD/air.com.adobe.pstouchphone_1.3.7-1003007_minAPI14_armeabi-v7a_apkmirror.com.apk \
-$PWD/app/src/main/assets/bundle.zip \
-$PWD/build/ps-touch-test.apk \
-$PWD/build/test-keys"
+adb push SOURCE.apk /data/local/tmp/pstouch-source.apk
+JAVA_HOME=/usr/lib/jvm/java-21-openjdk ./gradlew :app:connectedDebugAndroidTest
 ```
 
-## Next steps
+The release build reads signing values from an untracked `keystore.properties` file or the `AIRTOUCH_RELEASE_*` environment variables. See `keystore.properties.example`. Without release signing configured, the release APK is unsigned.
 
-1. Optional foreground service for background patch jobs.
-2. User-facing release build and distribution.
+To regenerate the Android bundle, build the AIR shell and final APK on a host with AIR SDK, FFDec, NDK and `bsdiff4` available, then run:
+
+```sh
+python3 tools/make_bundle.py --base BASE.apk --final FINAL.apk --source SOURCE.apk --output app/src/main/assets/bundle.zip
+```
+
+The `--base`, `--final` and `--source` APKs are host build inputs and are not stored in this repository.
+
+## Verified behavior on record
+
+The previous project status recorded these successful checks:
+
+- Bundle self-check reproduced every non-signature entry of the host-built final APK from the source APK and bundle.
+- Host engine output matched all 345 non-signature APK entries, passed APK signature verification, and had 16 KiB native library alignment plus 4-byte stored-entry alignment.
+- The app compiled and packaged; the full patch pipeline, signing and verification passed on a Galaxy S24 Ultra running Android 16.
+- The patched app launched on that device and passed AIR's runtime integrity check without the modified-package warning.
+
+These are recorded results from the previous validation run, not checks rerun while updating this document.
+
+## Known limitation
+
+The AIR startup splash remains because producing a custom splash requires a commercial AIR SDK license.
