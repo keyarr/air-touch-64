@@ -25,17 +25,24 @@ class DevicePatchTest {
         val identity = repo.identity()
         assertTrue(identity.sha256Fingerprint.isNotEmpty())
 
-        // 3. Source APK in app-specific external files dir
-        val extFiles = context.getExternalFilesDir(null) ?: error("External files dir not available")
-        val sourceFile = File(extFiles, "pstouch-source.apk")
-        assertTrue("Source APK must exist at ${sourceFile.absolutePath}", sourceFile.isFile)
+        // 3. Source APK
+        val localSource = File(context.cacheDir, "test-source.apk")
+        if (!localSource.isFile || localSource.length() == 0L) {
+            val uiAutomation = InstrumentationRegistry.getInstrumentation().uiAutomation
+            val pfd = uiAutomation.executeShellCommand("cat /data/local/tmp/pstouch-source.apk")
+            java.io.FileInputStream(pfd.fileDescriptor).use { input ->
+                localSource.outputStream().use { output -> input.copyTo(output) }
+            }
+            pfd.close()
+        }
+        assertTrue("Source APK must exist and be non-empty", localSource.isFile && localSource.length() > 0)
 
-        val inspection = repo.inspect(sourceFile, manifest)
+        val inspection = repo.inspect(localSource, manifest)
         assertTrue("Source APK must be supported", inspection.supported)
 
         // 4. Run patching on device
         val events = mutableListOf<String>()
-        val result = repo.patch(sourceFile, manifest, identity) { event ->
+        val result = repo.patch(localSource, manifest, identity) { event ->
             events += event.toString()
         }
 
@@ -46,8 +53,8 @@ class DevicePatchTest {
         val certs = ApkSigning.verify(result.output)
         assertEquals(1, certs.size)
 
-        // Copy out to extFiles/patched-on-device.apk so we can inspect/install it
-        val exported = File(extFiles, "patched-on-device.apk")
+        // Copy out to cache/patched-on-device.apk so we can inspect it
+        val exported = File(context.cacheDir, "patched-on-device.apk")
         result.output.inputStream().use { input ->
             exported.outputStream().use { output -> input.copyTo(output) }
         }

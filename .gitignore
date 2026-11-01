@@ -1,5 +1,6 @@
 .gradle/
 .kotlin/
+.serena/
 build/
 app/build/
 engine/build/
