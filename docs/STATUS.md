@@ -29,7 +29,7 @@ app/                         Compose UI
   PatchRepository.kt         asset bundle, SAF import, keystore and output paths
   PatchViewModel.kt          state machine: Home, Running, Done, Failed
   MainActivity.kt            screens, install and save handoff
-app/src/main/assets/bundle.zip   generated bundle, 10,341,233 bytes
+app/src/main/assets/bundle.zip   generated bundle, 14,121,587 bytes
 tools/make_bundle.py         bundle generator and reproducibility self-check
 ```
 
@@ -40,14 +40,19 @@ tools/make_bundle.py         bundle generator and reproducibility self-check
 - Host engine run produces signed, aligned APK:
   - 345 entries, contents byte-identical to the host build for every non-signature entry
   - ZIP alignment verified: shared libraries aligned to 16 KB boundaries, stored entries to 4 bytes
-  - apksig verification passes (v2 and v3 schemes)
+  - apksig verification passes (v1, v2 and v3 schemes enabled)
 - Android module compiles and packages cleanly.
 - Full on-device patching pipeline verified on SM-S928B (Galaxy S24 Ultra, Android 16) via
   `DevicePatchTest`:
   - Bundle read from APK asset
   - BouncyCastle certificate generation and PKCS12 KeyStore on Android runtime
-  - SWF CWS inflate/bspatch/deflate, DEX bspatch, resource merge, 16 KB aligned ZIP write
-  - apksig v2/v3 signing and verification on device
+  - Raw SWF bspatch, DEX bspatch, resource merge, 16 KB aligned ZIP write
+  - apksig v1/v2/v3 signing and verification on device
+- On-device launch verified: patched APK installed and run on SM-S928B; Harman AIR runtime
+  package integrity check (`AIRRuntimeCheck`) passes without "package may have been modified"
+  warning because the SWF patch operates directly on the compressed CWS file, preserving the
+  exact bytes signed in `META-INF/AIR/license.txt`.
+- Native extension library includes particle blending alpha accumulation fix (`da3f68d`).
 - `psccrevived` compiles with `FnBrowseImages.java` anonymous `Runnable` restored.
 
 ## Known problems
