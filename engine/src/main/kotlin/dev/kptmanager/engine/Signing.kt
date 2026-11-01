@@ -90,7 +90,7 @@ object ApkSigning {
         ApkSigner.Builder(listOf(signer))
             .setInputApk(input)
             .setOutputApk(output)
-            .setV1SigningEnabled(false)
+            .setV1SigningEnabled(true)
             .setV2SigningEnabled(true)
             .setV3SigningEnabled(true)
             .setMinSdkVersion(26)

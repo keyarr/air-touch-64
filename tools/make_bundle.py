@@ -28,16 +28,6 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def swf_body(raw: bytes) -> bytes:
-    import zlib
-
-    if raw[:3] == b"CWS":
-        return zlib.decompress(raw[8:])
-    if raw[:3] == b"FWS":
-        return raw[8:]
-    raise SystemExit(f"unsupported SWF signature {raw[:3]!r}")
-
-
 def is_signature(name: str) -> bool:
     if name in SIGNATURE_NAMES:
         return True
@@ -63,11 +53,9 @@ def main() -> None:
     final = read_zip(args.final)
     source = read_zip(args.source)
 
-    if SWF_ENTRY not in source:
-        raise SystemExit(f"{args.source} has no {SWF_ENTRY}")
-    source_swf_body = swf_body(source[SWF_ENTRY])
-    final_swf_body = swf_body(final[SWF_ENTRY])
-    swf_patch = bsdiff4.diff(source_swf_body, final_swf_body)
+    source_swf = source[SWF_ENTRY]
+    final_swf = final[SWF_ENTRY]
+    swf_patch = bsdiff4.diff(source_swf, final_swf)
 
     dex_patches = []
     dex_deltas = {}
@@ -120,8 +108,8 @@ def main() -> None:
         },
         "swf": {
             "patch": "patches/swf.bdf",
-            "sourceBodySha256": sha256(source_swf_body),
-            "resultBodySha256": sha256(final_swf_body),
+            "sourceSha256": sha256(source_swf),
+            "resultSha256": sha256(final_swf),
         },
         "dexPatches": dex_patches,
         "nativeLibs": native_libs,

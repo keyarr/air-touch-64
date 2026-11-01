@@ -97,16 +97,14 @@ class PatchEngine(private val workspace: File) {
             step("swf")
             val swfEntry = manifest.source.swfEntry
             val swfRaw = readEntry(source, swfEntry)
-            val swfBody = Swf.body(swfRaw)
-            check(sha256(swfBody) == manifest.swf.sourceBodySha256) {
+            check(sha256(swfRaw) == manifest.swf.sourceSha256) {
                 "SWF de origem não confere com o bundle"
             }
             val patchBytes = readBundle(bundleZip, manifest.swf.patch)
-            val patchedBody = BsPatch.patch(swfBody, patchBytes)
-            check(sha256(patchedBody) == manifest.swf.resultBodySha256) {
-                "SWF patch produziu um corpo inesperado"
+            val swfOut = BsPatch.patch(swfRaw, patchBytes)
+            check(sha256(swfOut) == manifest.swf.resultSha256) {
+                "SWF patch produziu um arquivo inesperado"
             }
-            val swfOut = Swf.compress(Swf.version(swfRaw), patchedBody)
             onEvent(PatchEvent.Message("SWF: ${patchBytes.size / 1024} KiB de patch aplicados"))
             done("swf")
 
@@ -254,7 +252,9 @@ class PatchEngine(private val workspace: File) {
                     name.endsWith(".jpg") ||
                     name.endsWith(".jpeg") ||
                     name.endsWith(".gif") ||
-                    name.endsWith(".swf")
+                    name == "res/b8" ||
+                    name == "res/iv" ||
+                    name == "androidsupportmultidexversion.txt"
                 writer.add(name, data, store = store, alignment = alignment)
                 index++
                 if (index % 25 == 0) onEvent(PatchEvent.Progress(index, entries.size))
