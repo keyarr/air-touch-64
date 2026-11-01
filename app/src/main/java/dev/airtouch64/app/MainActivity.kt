@@ -11,7 +11,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -26,12 +25,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -42,14 +41,18 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import dev.airtouch64.app.ui.theme.AirTouchTheme
 import dev.airtouch64.engine.PatchResult
@@ -145,6 +148,7 @@ private fun HomeScreen(state: UiState.Home, onPick: (Uri) -> Unit, onStart: () -
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) onPick(uri)
     }
+    var showApkHelp by remember { mutableStateOf(false) }
     ContentColumn {
         AppHeader()
         val source = state.source
@@ -152,12 +156,15 @@ private fun HomeScreen(state: UiState.Home, onPick: (Uri) -> Unit, onStart: () -
             Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("APK de origem", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "Selecione o Adobe Photoshop Touch 1.3.7 (air.com.adobe.pstouchphone). O arquivo é verificado no cache local do aparelho.",
+                    "Apenas o Photoshop Touch 1.3.7 é suportado",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OutlinedButton(onClick = { picker.launch(arrayOf("*/*")) }, enabled = !state.importing) {
                     Text(if (source == null) "Escolher APK" else "Trocar APK")
+                }
+                TextButton(onClick = { showApkHelp = true }, enabled = !state.importing) {
+                    Text("Não tenho um apk")
                 }
                 if (state.importing) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -196,11 +203,11 @@ private fun HomeScreen(state: UiState.Home, onPick: (Uri) -> Unit, onStart: () -
             Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text("Patches incluídos", style = MaterialTheme.typography.titleMedium)
-                    Text("${state.manifest.name} · versão ${state.manifest.version}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Ver. 1.0.0", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 state.manifest.steps.forEachIndexed { index, step ->
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("${index + 1}.", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                        Text("${index + 1}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(step.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
                             Text(step.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -221,18 +228,56 @@ private fun HomeScreen(state: UiState.Home, onPick: (Uri) -> Unit, onStart: () -
             modifier = Modifier.fillMaxWidth().height(56.dp),
         ) { Text("Aplicar patches") }
     }
+    if (showApkHelp) ApkHelpDialog(onDismiss = { showApkHelp = false })
 }
 
 @Composable
 private fun AppHeader() {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Image(painterResource(R.drawable.logo), contentDescription = "Air Touch 64", modifier = Modifier.size(48.dp).clip(CircleShape))
-        Spacer(Modifier.width(14.dp))
-        Column {
-            Text("Air Touch 64", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-            Text("Patcher local ARM64 para PS Touch", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
+    Text(
+        "AIR TOUCH 64",
+        modifier = Modifier.fillMaxWidth(),
+        style = MaterialTheme.typography.headlineSmall,
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 2.sp,
+        textAlign = TextAlign.Center,
+    )
+}
+
+@Composable
+private fun ApkHelpDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Não tenho um apk") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Você pode obter aqui:")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.apkmirror.com/apk/adobe/adobe-photoshop-touch-phone/ps-touch-1-3-7-release/")))
+                            onDismiss()
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("APKMirror", maxLines = 1) }
+                    OutlinedButton(
+                        onClick = {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://apkpure.net/br/adobe-photoshop-touch/air.com.adobe.pstouchphone/download")))
+                            onDismiss()
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Apkpure", maxLines = 1) }
+                }
+                Text(
+                    "Não tenho afiliação com esses sites.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Fechar") } },
+    )
 }
 
 @Composable
