@@ -12,10 +12,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,29 +33,25 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import dev.airtouch64.app.ui.theme.AirTouchTheme
 import dev.airtouch64.engine.PatchResult
 import java.io.File
 
@@ -65,12 +62,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme(
-                primary = Color(0xFF7AB8FF),
-                secondary = Color(0xFF9AD1FF),
-                background = Color(0xFF101418),
-                surface = Color(0xFF181D23),
-            )) {
+            AirTouchTheme {
                 ManagerApp(
                     viewModel = viewModel,
                     onInstall = ::install,
@@ -121,71 +113,47 @@ private fun ManagerApp(
     Scaffold { padding ->
         Surface(modifier = Modifier.fillMaxSize().padding(padding)) {
             when (val current = state) {
-                is UiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                UiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
-
-                is UiState.Home -> HomeScreen(
-                    state = current,
-                    onPick = viewModel::importSource,
-                    onStart = viewModel::start,
-                )
-
+                is UiState.Home -> HomeScreen(current, viewModel::importSource, viewModel::start)
                 is UiState.Running -> RunningScreen(current)
-
-                is UiState.Done -> DoneScreen(
-                    result = current.result,
-                    onInstall = onInstall,
-                    onSave = onSave,
-                    onReset = viewModel::reset,
-                )
-
-                is UiState.Failed -> FailedScreen(current, onReset = viewModel::reset)
+                is UiState.Done -> DoneScreen(current.result, onInstall, onSave, viewModel::reset)
+                is UiState.Failed -> FailedScreen(current, viewModel::reset)
             }
         }
     }
 }
 
 @Composable
-private fun HomeScreen(
-    state: UiState.Home,
-    onPick: (Uri) -> Unit,
-    onStart: () -> Unit,
+private fun ContentColumn(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        val horizontalPadding = if (maxWidth > 680.dp) (maxWidth - 640.dp) / 2 else 20.dp
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = horizontalPadding, vertical = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            content = content,
+        )
+    }
+}
+
+@Composable
+private fun HomeScreen(state: UiState.Home, onPick: (Uri) -> Unit, onStart: () -> Unit) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) onPick(uri)
     }
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Image(
-                painter = painterResource(R.drawable.logo),
-                contentDescription = null,
-                modifier = Modifier.size(44.dp).clip(CircleShape),
-            )
-            Spacer(Modifier.width(12.dp))
-            Column {
-                Text("Air Touch 64", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                Text(
-                    "Patcher local ARM64 para PS Touch",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-
+    ContentColumn {
+        AppHeader()
         val source = state.source
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+            Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("APK de origem", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "Escolha o APK do Adobe Photoshop Touch 1.3.7 (air.com.adobe.pstouchphone). O arquivo não é copiado para lugar nenhum além do cache local.",
-                    style = MaterialTheme.typography.bodySmall,
+                    "Selecione o Adobe Photoshop Touch 1.3.7 (air.com.adobe.pstouchphone). O arquivo é verificado no cache local do aparelho.",
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OutlinedButton(onClick = { picker.launch(arrayOf("*/*")) }, enabled = !state.importing) {
@@ -193,209 +161,168 @@ private fun HomeScreen(
                 }
                 if (state.importing) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Lendo e verificando…", style = MaterialTheme.typography.bodySmall)
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Text("Lendo e verificando APK…", style = MaterialTheme.typography.bodyMedium)
                     }
                 }
                 if (source != null) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
-                    Text(source.name, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    HorizontalDivider()
+                    Text(source.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text(
-                        "SHA-256 ${source.inspection.sha256.take(16)}…  ·  ${source.inspection.size / 1024 / 1024} MiB  ·  ${source.inspection.entryCount} entradas",
+                        "SHA-256 ${source.inspection.sha256.take(16)}… · ${source.inspection.size / 1024 / 1024} MiB · ${source.inspection.entryCount} entradas",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     val supported = source.inspection.supported
                     Text(
-                        if (supported) "APK reconhecido" else "APK não suportado pelo bundle",
-                        color = if (supported) Color(0xFF8BD68B) else MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Medium,
+                        if (supported) "APK compatível" else "APK incompatível com este bundle",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (supported) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.error,
                     )
                     if (!supported && source.inspection.missingEntries.isNotEmpty()) {
                         Text(
-                            "Faltando: ${source.inspection.missingEntries.joinToString(", ")}",
+                            "Arquivos ausentes: ${source.inspection.missingEntries.joinToString(", ")}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
                 }
-                if (state.error != null) {
-                    Text(state.error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                }
+                state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
             }
         }
 
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Patches", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "${state.manifest.name} ${state.manifest.version}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+            Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Patches incluídos", style = MaterialTheme.typography.titleMedium)
+                    Text("${state.manifest.name} · versão ${state.manifest.version}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                state.manifest.steps.forEach { step ->
-                    Column {
-                        Text(step.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                        Text(
-                            step.description,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                state.manifest.steps.forEachIndexed { index, step ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("${index + 1}.", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(step.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                            Text(step.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
             }
         }
 
         Text(
-            "O APK de saída é assinado com uma chave gerada neste aparelho. Ele não atualiza uma instalação assinada pela Adobe: desinstale a versão antiga antes de instalar.",
+            "O APK de saída usa uma chave gerada neste aparelho. Para instalar, desinstale antes a versão assinada pela Adobe.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-
         Button(
             onClick = onStart,
-            enabled = source != null && source.inspection.supported,
-            modifier = Modifier.fillMaxWidth().height(50.dp),
-        ) {
-            Text("Aplicar patches")
+            enabled = source?.inspection?.supported == true && !state.importing,
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+        ) { Text("Aplicar patches") }
+    }
+}
+
+@Composable
+private fun AppHeader() {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Image(painterResource(R.drawable.logo), contentDescription = "Air Touch 64", modifier = Modifier.size(48.dp).clip(CircleShape))
+        Spacer(Modifier.width(14.dp))
+        Column {
+            Text("Air Touch 64", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+            Text("Patcher local ARM64 para PS Touch", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Spacer(Modifier.height(8.dp))
     }
 }
 
 @Composable
 private fun RunningScreen(state: UiState.Running) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-            Spacer(Modifier.width(10.dp))
-            Text("Aplicando patches…", style = MaterialTheme.typography.titleMedium)
-        }
-        state.manifest.steps.forEach { step ->
-            val done = step.id in state.completed
-            val running = step.id == state.currentStep
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier
-                        .size(10.dp)
-                        .background(
-                            when {
-                                done -> Color(0xFF8BD68B)
-                                running -> MaterialTheme.colorScheme.primary
-                                else -> MaterialTheme.colorScheme.surfaceVariant
-                            },
-                            CircleShape,
-                        ),
-                )
-                Spacer(Modifier.width(10.dp))
-                Text(
-                    step.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (done || running) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+    ContentColumn {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.5.dp)
+            Column {
+                Text("Aplicando patches", style = MaterialTheme.typography.titleLarge)
+                Text("Não feche o app durante o processamento.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
-        Card(
-            modifier = Modifier.weight(1f),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF0B0E11)),
-        ) {
-            Column(
-                Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                if (state.log.isEmpty()) {
-                    Text("aguardando…", style = MaterialTheme.typography.bodySmall, color = Color(0xFF7A8794))
+        val total = state.manifest.steps.size
+        val completeCount = state.completed.size
+        LinearProgressIndicator(
+            progress = {
+                if (total == 0) 0f else ((completeCount + if (state.currentStep != null) 0.5f else 0f) / total).coerceIn(0f, 1f)
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                state.manifest.steps.forEach { step ->
+                    val done = step.id in state.completed
+                    val running = step.id == state.currentStep
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            when { done -> "Concluído · ${step.name}"; running -> "Em andamento · ${step.name}"; else -> step.name },
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = when { done -> MaterialTheme.colorScheme.tertiary; running -> MaterialTheme.colorScheme.primary; else -> MaterialTheme.colorScheme.onSurfaceVariant },
+                            fontWeight = if (running) FontWeight.SemiBold else FontWeight.Normal,
+                        )
+                        Text(step.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
-                state.log.takeLast(40).forEach { line ->
-                    Text(
-                        line,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
-                        color = Color(0xFFB8C4CE),
-                    )
-                }
+            }
+        }
+        LogCard(state.log)
+    }
+}
+
+@Composable
+private fun LogCard(log: List<String>) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Registro", style = MaterialTheme.typography.titleSmall)
+            if (log.isEmpty()) Text("Aguardando…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            log.takeLast(40).forEach { line ->
+                Text(line, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
 }
 
 @Composable
-private fun DoneScreen(
-    result: PatchResult,
-    onInstall: (File) -> Unit,
-    onSave: (File) -> Unit,
-    onReset: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Text("APK gerado", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+private fun DoneScreen(result: PatchResult, onInstall: (File) -> Unit, onSave: (File) -> Unit, onReset: () -> Unit) {
+    ContentColumn {
+        Text("APK pronto", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.tertiary)
+        Text("Os patches foram aplicados e o arquivo está pronto.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+            Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 LabeledValue("Arquivo", result.output.name)
                 LabeledValue("Tamanho", "${result.size / 1024 / 1024} MiB")
                 LabeledValue("Entradas", result.entries.toString())
                 LabeledValue("SHA-256", result.sha256.chunked(32).joinToString("\n"))
-                LabeledValue("Assinatura", result.signerFingerprint.chunked(47).joinToString("\n"))
+                LabeledValue("Assinatura", result.signerFingerprint.chunked(32).joinToString("\n"))
             }
         }
-        Button(onClick = { onInstall(result.output) }, modifier = Modifier.fillMaxWidth().height(50.dp)) {
-            Text("Instalar")
-        }
-        OutlinedButton(onClick = { onSave(result.output) }, modifier = Modifier.fillMaxWidth()) {
-            Text("Salvar APK")
-        }
-        TextButton(onClick = onReset, modifier = Modifier.fillMaxWidth()) {
-            Text("Voltar")
-        }
+        Button(onClick = { onInstall(result.output) }, modifier = Modifier.fillMaxWidth().height(56.dp)) { Text("Instalar") }
+        OutlinedButton(onClick = { onSave(result.output) }, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Salvar APK") }
+        TextButton(onClick = onReset, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Voltar") }
     }
 }
 
 @Composable
 private fun FailedScreen(state: UiState.Failed, onReset: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text("Falhou", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.error)
-        Text(state.message, style = MaterialTheme.typography.bodyMedium)
-        if (state.log.isNotEmpty()) {
-            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF0B0E11))) {
-                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    state.log.takeLast(40).forEach { line ->
-                        Text(line, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = Color(0xFFB8C4CE))
-                    }
-                }
-            }
+    ContentColumn {
+        Text("Não foi possível concluir", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.error)
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+            Text(state.message, Modifier.fillMaxWidth().padding(16.dp), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onErrorContainer)
         }
-        Button(onClick = onReset, modifier = Modifier.fillMaxWidth()) { Text("Voltar") }
+        if (state.log.isNotEmpty()) LogCard(state.log)
+        Button(onClick = onReset, modifier = Modifier.fillMaxWidth().height(56.dp)) { Text("Voltar") }
     }
 }
 
 @Composable
 private fun LabeledValue(label: String, value: String) {
-    Column {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, softWrap = true)
     }
 }
