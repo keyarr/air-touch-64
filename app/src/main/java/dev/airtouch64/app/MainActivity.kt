@@ -160,11 +160,21 @@ private fun HomeScreen(state: UiState.Home, onPick: (Uri) -> Unit, onStart: () -
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                OutlinedButton(onClick = { picker.launch(arrayOf("*/*")) }, enabled = !state.importing) {
-                    Text(if (source == null) "Escolher APK" else "Trocar APK")
-                }
-                TextButton(onClick = { showApkHelp = true }, enabled = !state.importing) {
-                    Text("Não tenho um apk")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { picker.launch(arrayOf("*/*")) },
+                        enabled = !state.importing,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(if (source == null) "Escolher APK" else "Trocar APK", maxLines = 1)
+                    }
+                    OutlinedButton(
+                        onClick = { showApkHelp = true },
+                        enabled = !state.importing,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Não tenho APK", maxLines = 1)
+                    }
                 }
                 if (state.importing) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -249,7 +259,6 @@ private fun ApkHelpDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Não tenho um apk") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Você pode obter aqui:")
@@ -270,7 +279,7 @@ private fun ApkHelpDialog(onDismiss: () -> Unit) {
                     ) { Text("Apkpure", maxLines = 1) }
                 }
                 Text(
-                    "Não tenho afiliação com esses sites.",
+                    "O Air Touch 64 não tem vínculo, patrocínio ou afiliação com o APKMirror ou o APKPure. Os links levam a sites de terceiros.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
