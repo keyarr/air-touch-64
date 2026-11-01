@@ -10,7 +10,7 @@
     <string name="supported_version">Only Photoshop Touch 1.3.7 is supported</string>
     <string name="choose_apk">Choose APK</string>
     <string name="change_apk">Change APK</string>
-    <string name="no_apk">I do not have an APK</string>
+    <string name="no_apk">I don\'t have a APK</string>
     <string name="reading_apk">Reading and checking APK…</string>
     <string name="apk_compatible">Compatible APK</string>
     <string name="apk_incompatible">APK is incompatible with this bundle</string>
