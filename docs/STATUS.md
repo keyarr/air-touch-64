@@ -29,7 +29,7 @@ app/                         Compose UI
   PatchRepository.kt         asset bundle, SAF import, keystore and output paths
   PatchViewModel.kt          state machine: Home, Running, Done, Failed
   MainActivity.kt            screens, install and save handoff
-app/src/main/assets/bundle.zip   generated bundle, 14,126,497 bytes
+app/src/main/assets/bundle.zip   generated bundle, 14,123,980 bytes
 tools/make_bundle.py         bundle generator and reproducibility self-check
 ```
 
@@ -53,7 +53,8 @@ tools/make_bundle.py         bundle generator and reproducibility self-check
   warning because the SWF patch operates directly on the compressed CWS file, preserving the
   exact bytes signed in `META-INF/AIR/license.txt`.
 - Native extension library includes particle blending alpha accumulation fix (`da3f68d`).
-- ActionScript includes paint halo accumulation fix (`96c3fc1`).
+- ActionScript includes paint halo accumulation fix (`96c3fc1`) with brush opacity in the working
+  bitmap preview (`85547f1`).
 - Resources include title capitalization and repository link updates (`acf8489`).
 - `psccrevived` compiles with `FnBrowseImages.java` anonymous `Runnable` restored.
 
