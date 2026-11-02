@@ -10,3 +10,6 @@ keystore.properties
 *.jks
 *.apk
 *.log
+bundle.zip
+bundle.at64
+*.enc

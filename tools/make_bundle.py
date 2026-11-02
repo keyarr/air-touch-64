@@ -12,12 +12,14 @@ the source SWF/DEX and the patched ones, the resource overrides and the extensio
 
 import argparse
 import hashlib
+import io
 import json
 import pathlib
 import re
 import zipfile
 
 import bsdiff4
+from encrypt_bundle import encrypt_bytes
 
 SWF_ENTRY = "assets/TTPixel.swf"
 RESOURCE_PREFIX = "assets/resource/"
@@ -149,7 +151,8 @@ def main() -> None:
     shell = {name: data for name, data in shell.items()}
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(args.output, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+    archive_buffer = io.BytesIO()
+    with zipfile.ZipFile(archive_buffer, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         archive.writestr("manifest.json", json.dumps(manifest, indent=2))
         archive.writestr("patches/swf.bdf", swf_patch)
         for path, data in dex_deltas.items():
@@ -160,6 +163,12 @@ def main() -> None:
             archive.writestr(override["bundlePath"], final[override["entry"]])
         for lib in native_libs:
             archive.writestr(lib["bundlePath"], final[lib["entry"]])
+
+    archive_bytes = archive_buffer.getvalue()
+    if args.output.suffix.lower() in {".at64", ".enc"}:
+        args.output.write_bytes(encrypt_bytes(args.source, archive_bytes))
+    else:
+        args.output.write_bytes(archive_bytes)
 
     print(f"bundle: {args.output} ({args.output.stat().st_size} bytes)")
     print(f"  shell entries: {len(shell)}")

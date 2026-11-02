@@ -19,7 +19,7 @@ The canonical copy of this transformation lives in the PS Touch Revived reposito
 
 Requires baksmali/smali and bsdiff4:
 
-    python3 tools/patch_bundle_dex.py app/src/main/assets/bundle.zip \
+    python3 tools/patch_bundle_dex.py bundle.at64 --source source.apk \
         --baksmali "$AIR_SDK/lib/android/lib/baksmali.jar" \
         --smali "$AIR_SDK/lib/android/lib/smali.jar"
 """
@@ -36,6 +36,7 @@ import tempfile
 import zipfile
 
 import bsdiff4
+from encrypt_bundle import decrypt_bytes, encrypt_bytes
 
 SURFACE_VIEW = "com/adobe/air/AIRWindowSurfaceView.smali"
 SURFACE_CHANGED_MARKER = "->getRootWindowInsets()"
@@ -155,16 +156,24 @@ def assemble(smali: pathlib.Path, source: pathlib.Path, out: pathlib.Path) -> No
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("bundle", type=pathlib.Path, help="bundle.zip carried by the app")
+    parser.add_argument("bundle", type=pathlib.Path, help="input ZIP or encrypted AT64 bundle")
     parser.add_argument("--baksmali", type=pathlib.Path, default=None)
     parser.add_argument("--smali", type=pathlib.Path, default=None)
     parser.add_argument("--output", type=pathlib.Path, default=None, help="defaults to rewriting the bundle")
+    parser.add_argument("--source", type=pathlib.Path, help="source APK required for AT64 input/output")
     args = parser.parse_args()
 
     baksmali = resolve_jar(args.baksmali, "AIR_SDK", "lib/android/lib/baksmali.jar")
     smali = resolve_jar(args.smali, "AIR_SDK", "lib/android/lib/smali.jar")
 
-    with zipfile.ZipFile(args.bundle) as archive:
+    raw_bundle = args.bundle.read_bytes()
+    encrypted = raw_bundle.startswith(b"AT64")
+    if encrypted:
+        if not args.source:
+            raise SystemExit("--source is required for AT64 bundles")
+        raw_bundle = decrypt_bytes(args.source, raw_bundle)
+    import io
+    with zipfile.ZipFile(io.BytesIO(raw_bundle)) as archive:
         entries = [(info, archive.read(info.filename)) for info in archive.infolist()]
     manifest_entry, manifest_raw = next((info, data) for info, data in entries if info.filename == "manifest.json")
     manifest = json.loads(manifest_raw)
@@ -226,13 +235,21 @@ def main() -> None:
     updated_manifest = json.dumps(manifest, indent=2).encode()
     output = args.output or args.bundle
 
-    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for info, data in entries:
             if info.filename == "manifest.json":
                 data = updated_manifest
             elif info.filename == patch_name:
                 data = delta
             archive.writestr(info.filename, data)
+    result = buffer.getvalue()
+    if output.suffix.lower() in {".at64", ".enc"} or (encrypted and args.output is None):
+        if not args.source:
+            raise SystemExit("--source is required to encrypt AT64 output")
+        output.write_bytes(encrypt_bytes(args.source, result))
+    else:
+        output.write_bytes(result)
 
     print(f"patched {output}")
     print(f"  {dex_patch['entry']}: {sha256(current_dex)} -> {sha256(fixed_bytes)}")

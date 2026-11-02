@@ -1,6 +1,5 @@
 package dev.airtouch64.engine
 
-import kotlinx.serialization.json.Json
 import java.io.File
 import java.security.MessageDigest
 import java.util.zip.ZipFile
@@ -35,13 +34,18 @@ sealed interface PatchEvent {
  * verified byte level transformation: hashes are checked before and after each patch.
  */
 class PatchEngine(private val workspace: File) {
-    private val json = Json { ignoreUnknownKeys = true }
+    fun readHeader(bundle: File): BundleHeader = BundleCrypto.readHeader(bundle)
 
-    fun readManifest(bundle: File): BundleManifest =
-        ZipFile(bundle).use { zip ->
-            val entry = zip.getEntry(MANIFEST) ?: error("Bundle has no $MANIFEST")
-            zip.getInputStream(entry).use { json.decodeFromString(it.readBytes().decodeToString()) }
+    fun inspect(source: File, header: BundleHeader): SourceInspection {
+        val sha = sha256(source)
+        val missing = mutableListOf<String>()
+        var count = 0
+        ZipFile(source).use { zip ->
+            count = zip.size()
+            for (entry in header.source.requiredEntries) if (zip.getEntry(entry) == null) missing += entry
         }
+        return SourceInspection(sha, source.length(), sha in header.source.sha256 && missing.isEmpty(), missing, count)
+    }
 
     fun inspect(source: File, manifest: BundleManifest): SourceInspection {
         val sha = sha256(source)
@@ -72,7 +76,7 @@ class PatchEngine(private val workspace: File) {
         workspace.mkdirs()
         val steps = mutableListOf<String>()
         var entryCount = 0
-        val manifest = readManifest(bundle)
+        val (manifest, bundleEntries) = BundleCrypto.decryptEntries(bundle, source)
 
         fun step(id: String) {
             steps += id
@@ -93,14 +97,14 @@ class PatchEngine(private val workspace: File) {
         onEvent(PatchEvent.Message("Origem verificada: ${inspection.sha256}"))
         done("validate")
 
-        ZipFile(bundle).use { bundleZip ->
+        run {
             step("swf")
             val swfEntry = manifest.source.swfEntry
             val swfRaw = readEntry(source, swfEntry)
             check(sha256(swfRaw) == manifest.swf.sourceSha256) {
                 "SWF de origem não confere com o bundle"
             }
-            val patchBytes = readBundle(bundleZip, manifest.swf.patch)
+            val patchBytes = readBundle(bundleEntries, manifest.swf.patch)
             val swfOut = BsPatch.patch(swfRaw, patchBytes)
             check(sha256(swfOut) == manifest.swf.resultSha256) {
                 "SWF patch produziu um arquivo inesperado"
@@ -111,9 +115,9 @@ class PatchEngine(private val workspace: File) {
             step("dex")
             val dexOut = mutableMapOf<String, ByteArray>()
             for (dex in manifest.dexPatches) {
-                val input = readBundle(bundleZip, "shell/${dex.entry}")
+                val input = readBundle(bundleEntries, "shell/${dex.entry}")
                 check(sha256(input) == dex.inputSha256) { "DEX ${dex.entry} inesperado no bundle" }
-                val patched = BsPatch.patch(input, readBundle(bundleZip, dex.patch))
+                val patched = BsPatch.patch(input, readBundle(bundleEntries, dex.patch))
                 check(sha256(patched) == dex.outputSha256) { "DEX ${dex.entry} não confere após o patch" }
                 dexOut[dex.entry] = patched
             }
@@ -129,7 +133,7 @@ class PatchEngine(private val workspace: File) {
                 }
             }
             for (override in manifest.resourceOverrides) {
-                resources[override.entry] = readBundle(bundleZip, override.bundlePath)
+                resources[override.entry] = readBundle(bundleEntries, override.bundlePath)
             }
             onEvent(PatchEvent.Message("Recursos: ${resources.size} arquivos"))
             done("resources")
@@ -138,16 +142,16 @@ class PatchEngine(private val workspace: File) {
             val unsigned = File(workspace, "unsigned.apk")
             unsigned.delete()
             val entries = linkedMapOf<String, ByteArray>()
-            for (entry in bundleZip.entries()) {
-                if (entry.isDirectory || !entry.name.startsWith("shell/")) continue
-                val name = entry.name.removePrefix("shell/")
+            for ((path, data) in bundleEntries) {
+                if (!path.startsWith("shell/")) continue
+                val name = path.removePrefix("shell/")
                 if (isSignatureFile(name)) continue
-                entries[name] = dexOut[name] ?: bundleZip.getInputStream(entry).use { it.readBytes() }
+                entries[name] = dexOut[name] ?: data
             }
             entries.putAll(resources)
             entries[swfEntry] = swfOut
             for (lib in manifest.nativeLibs) {
-                entries[lib.entry] = readBundle(bundleZip, lib.bundlePath)
+                entries[lib.entry] = readBundle(bundleEntries, lib.bundlePath)
             }
 
             entryCount = entries.size
@@ -269,10 +273,8 @@ class PatchEngine(private val workspace: File) {
             zip.getInputStream(entry).use { it.readBytes() }
         }
 
-    private fun readBundle(zip: ZipFile, path: String): ByteArray {
-        val entry = zip.getEntry(path) ?: error("Entrada ausente no bundle: $path")
-        return zip.getInputStream(entry).use { it.readBytes() }
-    }
+    private fun readBundle(entries: Map<String, ByteArray>, path: String): ByteArray =
+        entries[path] ?: error("Entrada ausente no bundle: $path")
 
     private fun isSignatureFile(name: String): Boolean {
         if (name == "META-INF/MANIFEST.MF") return true
@@ -286,8 +288,6 @@ class PatchEngine(private val workspace: File) {
     }
 
     companion object {
-        private const val MANIFEST = "manifest.json"
-
         fun sha256(file: File): String {
             val digest = MessageDigest.getInstance("SHA-256")
             file.inputStream().use { input ->

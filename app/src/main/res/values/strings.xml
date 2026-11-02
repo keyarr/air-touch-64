@@ -7,6 +7,11 @@
     <string name="allow_unknown_apps">Permita instalar apps desconhecidos para este app</string>
     <string name="no_installer">Sem instalador disponível</string>
     <string name="source_apk">APK de origem</string>
+    <string name="patch_bundle">Bundle de patches</string>
+    <string name="choose_bundle">Escolher bundle</string>
+    <string name="change_bundle">Trocar bundle</string>
+    <string name="import_bundle_first">Importe um bundle antes do APK de origem</string>
+    <string name="bundle_details">%1$s · versão %2$s · %3$d MiB</string>
     <string name="supported_version">Apenas o Photoshop Touch 1.3.7 é suportado</string>
     <string name="choose_apk">Escolher APK</string>
     <string name="change_apk">Trocar APK</string>

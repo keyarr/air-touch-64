@@ -4,11 +4,11 @@ import java.io.File
 
 /**
  * Host runner used to validate the bundle and the engine without a device:
- *   ./gradlew :engine:run --args="source.apk bundle.zip out.apk keys"
+ *   ./gradlew :engine:run --args="source.apk bundle.at64 out.apk keys"
  */
 fun main(args: Array<String>) {
     if (args.size < 3) {
-        error("usage: main <source.apk> <bundle.zip> <output.apk> [key-directory]")
+        error("usage: main <source.apk> <bundle.at64> <output.apk> [key-directory]")
     }
     val source = File(args[0])
     val bundle = File(args[1])
@@ -16,10 +16,10 @@ fun main(args: Array<String>) {
     val keyDir = File(args.getOrElse(3) { "build/test-keys" })
 
     val engine = PatchEngine(File(System.getProperty("java.io.tmpdir"), "airtouch64-engine"))
-    val manifest = engine.readManifest(bundle)
-    println("bundle: ${manifest.name} ${manifest.version}")
+    val header = engine.readHeader(bundle)
+    println("bundle: ${header.name} ${header.version}")
 
-    val inspection = engine.inspect(source, manifest)
+    val inspection = engine.inspect(source, header)
     println("source: ${inspection.sha256} supported=${inspection.supported}")
     check(inspection.supported) { "source not supported" }
 

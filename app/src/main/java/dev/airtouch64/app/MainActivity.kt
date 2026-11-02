@@ -120,7 +120,7 @@ private fun ManagerApp(
                 UiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
-                is UiState.Home -> HomeScreen(current, viewModel::importSource, viewModel::start)
+                is UiState.Home -> HomeScreen(current, viewModel::importBundle, viewModel::importSource, viewModel::start)
                 is UiState.Running -> RunningScreen(current)
                 is UiState.Done -> DoneScreen(current.result, onInstall, onSave, viewModel::reset)
                 is UiState.Failed -> FailedScreen(current, viewModel::reset)
@@ -145,13 +145,30 @@ private fun ContentColumn(
 }
 
 @Composable
-private fun HomeScreen(state: UiState.Home, onPick: (Uri) -> Unit, onStart: () -> Unit) {
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+private fun HomeScreen(state: UiState.Home, onBundle: (Uri) -> Unit, onPick: (Uri) -> Unit, onStart: () -> Unit) {
+    val sourcePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) onPick(uri)
+    }
+    val bundlePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) onBundle(uri)
     }
     var showApkHelp by remember { mutableStateOf(false) }
     ContentColumn {
         AppHeader()
+        val bundle = state.bundle
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+            Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(stringResource(R.string.patch_bundle), style = MaterialTheme.typography.titleMedium)
+                OutlinedButton(onClick = { bundlePicker.launch(arrayOf("*/*")) }, enabled = !state.importingBundle) {
+                    Text(stringResource(if (bundle == null) R.string.choose_bundle else R.string.change_bundle))
+                }
+                if (bundle != null) {
+                    Text(bundle.name, style = MaterialTheme.typography.bodyLarge)
+                    Text(stringResource(R.string.bundle_details, bundle.header.name, bundle.header.version, bundle.file.length() / 1024 / 1024), style = MaterialTheme.typography.bodySmall)
+                }
+                if (state.importingBundle) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            }
+        }
         val source = state.source
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
             Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -163,21 +180,21 @@ private fun HomeScreen(state: UiState.Home, onPick: (Uri) -> Unit, onStart: () -
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
-                        onClick = { picker.launch(arrayOf("*/*")) },
-                        enabled = !state.importing,
+                        onClick = { sourcePicker.launch(arrayOf("*/*")) },
+                        enabled = !state.importingSource && bundle != null,
                         modifier = Modifier.weight(1f),
                     ) {
                         Text(stringResource(if (source == null) R.string.choose_apk else R.string.change_apk), maxLines = 1)
                     }
                     OutlinedButton(
                         onClick = { showApkHelp = true },
-                        enabled = !state.importing,
+                        enabled = !state.importingSource,
                         modifier = Modifier.weight(1f),
                     ) {
                         Text(stringResource(R.string.no_apk), maxLines = 1)
                     }
                 }
-                if (state.importing) {
+                if (state.importingSource) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         Spacer(Modifier.width(10.dp))
@@ -210,13 +227,13 @@ private fun HomeScreen(state: UiState.Home, onPick: (Uri) -> Unit, onStart: () -
             }
         }
 
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+        if (bundle != null) Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
             Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(stringResource(R.string.included_patches), style = MaterialTheme.typography.titleMedium)
                     Text(stringResource(R.string.version, "1.0.0"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                state.manifest.steps.forEachIndexed { index, step ->
+                bundle.header.steps.forEachIndexed { index, step ->
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("${index + 1}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -235,7 +252,7 @@ private fun HomeScreen(state: UiState.Home, onPick: (Uri) -> Unit, onStart: () -
         )
         Button(
             onClick = onStart,
-            enabled = source?.inspection?.supported == true && !state.importing,
+            enabled = bundle != null && source?.inspection?.supported == true && !state.importingBundle && !state.importingSource,
             modifier = Modifier.fillMaxWidth().height(56.dp),
         ) { Text(stringResource(R.string.apply_patches)) }
     }
@@ -328,7 +345,7 @@ private fun RunningScreen(state: UiState.Running) {
                 Text(stringResource(R.string.do_not_close), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        val total = state.manifest.steps.size
+        val total = state.header.steps.size
         val completeCount = state.completed.size
         LinearProgressIndicator(
             progress = {
@@ -338,7 +355,7 @@ private fun RunningScreen(state: UiState.Running) {
         )
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                state.manifest.steps.forEach { step ->
+                state.header.steps.forEach { step ->
                     val done = step.id in state.completed
                     val running = step.id == state.currentStep
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {

@@ -17,6 +17,15 @@ data class BundleManifest(
 )
 
 @Serializable
+data class BundleHeader(
+    val formatVersion: Int,
+    val name: String,
+    val version: String,
+    val source: SourceSpec,
+    val steps: List<PatchStepInfo> = emptyList(),
+)
+
+@Serializable
 data class SourceSpec(
     val sha256: List<String>,
     val requiredEntries: List<String>,

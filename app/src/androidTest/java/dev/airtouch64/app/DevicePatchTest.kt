@@ -17,9 +17,9 @@ class DevicePatchTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val repo = PatchRepository(context)
 
-        // 1. Read manifest from bundled asset
-        val manifest = repo.manifest()
-        assertEquals("PS Touch Revived ARM64", manifest.name)
+        // 1. Use the bundle imported by the user
+        val bundle = requireNotNull(repo.loadSavedBundle()) { "Import a bundle before running this test" }
+        assertEquals("PS Touch Revived ARM64", bundle.header.name)
 
         // 2. Exercise BouncyCastle certificate generation and KeyStore on Android
         val identity = repo.identity()
@@ -37,12 +37,12 @@ class DevicePatchTest {
         }
         assertTrue("Source APK must exist and be non-empty", localSource.isFile && localSource.length() > 0)
 
-        val inspection = repo.inspect(localSource, manifest)
+        val inspection = repo.inspect(localSource, bundle.header)
         assertTrue("Source APK must be supported", inspection.supported)
 
         // 4. Run patching on device
         val events = mutableListOf<String>()
-        val result = repo.patch(localSource, manifest, identity) { event ->
+        val result = repo.patch(localSource, bundle.file, identity) { event ->
             events += event.toString()
         }
 
