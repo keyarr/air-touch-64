@@ -37,6 +37,17 @@ class BundleCryptoTest {
         } finally { wrong.delete() }
     }
 
+    @Test
+    fun rejectsTamperedCiphertextWithClearAuthenticationError() = withFixtures { source, bundle, _ ->
+        val bytes = bundle.readBytes()
+        bytes[bytes.lastIndex - 1] = (bytes[bytes.lastIndex - 1].toInt() xor 1).toByte()
+        bundle.writeBytes(bytes)
+        val error = assertFailsWith<IllegalArgumentException> {
+            BundleCrypto.decryptEntries(bundle, source)
+        }
+        assertEquals(true, error.message?.contains("does not match this bundle or the bundle is corrupted"))
+    }
+
     private fun withFixtures(block: (File, File, BundleHeader) -> Unit) {
         val source = createSource(byteArrayOf(1, 2, 3, 4))
         val bundle = File.createTempFile("sample", ".at64")
