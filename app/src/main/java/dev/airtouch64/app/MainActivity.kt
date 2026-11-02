@@ -158,9 +158,15 @@ private fun HomeScreen(state: UiState.Home, onBundle: (Uri) -> Unit, onPick: (Ur
         val bundle = state.bundle
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
             Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(stringResource(R.string.patch_bundle), style = MaterialTheme.typography.titleMedium)
-                OutlinedButton(onClick = { bundlePicker.launch(arrayOf("*/*")) }, enabled = !state.importingBundle) {
-                    Text(stringResource(if (bundle == null) R.string.choose_bundle else R.string.change_bundle))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(stringResource(R.string.patch_bundle), style = MaterialTheme.typography.titleMedium)
+                    OutlinedButton(onClick = { bundlePicker.launch(arrayOf("*/*")) }, enabled = !state.importingBundle) {
+                        Text(stringResource(if (bundle == null) R.string.choose_bundle else R.string.change_bundle))
+                    }
                 }
                 if (bundle != null) {
                     Text(bundle.name, style = MaterialTheme.typography.bodyLarge)
