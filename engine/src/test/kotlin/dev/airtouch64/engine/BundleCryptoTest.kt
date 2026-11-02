@@ -16,6 +16,7 @@ import javax.crypto.spec.SecretKeySpec
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class BundleCryptoTest {
     private val json = Json
@@ -46,6 +47,50 @@ class BundleCryptoTest {
             BundleCrypto.decryptEntries(bundle, source)
         }
         assertEquals(true, error.message?.contains("does not match this bundle or the bundle is corrupted"))
+    }
+
+    @Test
+    fun decryptsBundleProducedByPythonTool() {
+        val directory = kotlin.io.path.createTempDirectory("at64-python-").toFile()
+        val source = File(directory, "source.apk")
+        val bundle = File(directory, "bundle.at64")
+        val script = """
+            import io, json, pathlib, sys, zipfile
+            sys.path.insert(0, 'tools')
+            from encrypt_bundle import encrypt_bytes
+            root = pathlib.Path(sys.argv[1])
+            source = root / 'source.apk'
+            with zipfile.ZipFile(source, 'w') as z:
+                z.writestr('assets/TTPixel.swf', b'swf')
+                z.writestr('assets/CABConfig.xml', b'config')
+                z.writestr('classes.dex', b'dex')
+            manifest = {
+                'formatVersion': 1, 'name': 'python-fixture', 'version': '1',
+                'source': {'sha256': ['0' * 64], 'requiredEntries': ['assets/TTPixel.swf', 'assets/CABConfig.xml'], 'swfEntry': 'assets/TTPixel.swf'},
+                'swf': {'patch': 'patches/swf.bdf', 'sourceSha256': 'a', 'resultSha256': 'b'}, 'steps': []
+            }
+            raw = io.BytesIO()
+            with zipfile.ZipFile(raw, 'w') as z:
+                z.writestr('manifest.json', json.dumps(manifest))
+                z.writestr('patches/swf.bdf', b'python encrypted payload')
+            (root / 'bundle.at64').write_bytes(encrypt_bytes(source, raw.getvalue()))
+        """.trimIndent()
+        try {
+            val currentDir = File(System.getProperty("user.dir"))
+            val projectRoot = if (File(currentDir, "tools/encrypt_bundle.py").isFile) currentDir else currentDir.parentFile
+            val process = ProcessBuilder("python3", "-c", script, directory.absolutePath)
+                .directory(projectRoot)
+                .redirectErrorStream(true)
+                .start()
+            val output = process.inputStream.bufferedReader().readText()
+            assertEquals(0, process.waitFor(), output)
+            val header = BundleCrypto.readHeader(bundle)
+            assertEquals("python-fixture", header.name)
+            val (_, entries) = BundleCrypto.decryptEntries(bundle, source)
+            assertTrue(entries.getValue("patches/swf.bdf").contentEquals("python encrypted payload".encodeToByteArray()))
+        } finally {
+            directory.deleteRecursively()
+        }
     }
 
     private fun withFixtures(block: (File, File, BundleHeader) -> Unit) {
