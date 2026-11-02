@@ -11,10 +11,20 @@ import dev.airtouch64.engine.SigningIdentity
 import dev.airtouch64.engine.SigningStore
 import dev.airtouch64.engine.SourceInspection
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 class PatchRepository(private val context: Context) {
     private val engine = PatchEngine(File(context.cacheDir, "engine"))
     private val bundleFile = File(context.filesDir, "bundle/bundle.at64")
+
+    companion object {
+        private const val BUNDLE_RELEASE_URL =
+            "https://github.com/keyarr/airtouch64-bundle-backend/releases/latest/download/bundle.at64"
+    }
 
     fun loadSavedBundle(): BundleSelection? {
         if (!bundleFile.isFile) return null
@@ -34,6 +44,32 @@ class PatchRepository(private val context: Context) {
             File(dir, "bundle.name").writeText(name)
             return BundleSelection(bundleFile, name, header)
         } finally { temp.delete() }
+    }
+
+    fun downloadLatestBundle(): BundleSelection {
+        val dir = bundleFile.parentFile!!.apply { mkdirs() }
+        val temp = File(dir, "bundle.at64.download")
+        val connection = URL(BUNDLE_RELEASE_URL).openConnection() as HttpURLConnection
+        connection.connectTimeout = 15_000
+        connection.readTimeout = 60_000
+        connection.instanceFollowRedirects = true
+        try {
+            check(connection.responseCode == HttpURLConnection.HTTP_OK) {
+                "Bundle download failed: HTTP ${connection.responseCode}"
+            }
+            connection.inputStream.use { input -> temp.outputStream().use(input::copyTo) }
+            val header = engine.readHeader(temp)
+            try {
+                Files.move(temp.toPath(), bundleFile.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(temp.toPath(), bundleFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+            File(dir, "bundle.name").writeText("bundle.at64")
+            return BundleSelection(bundleFile, "bundle.at64", header)
+        } finally {
+            temp.delete()
+            connection.disconnect()
+        }
     }
 
     private fun savedName(): String = File(bundleFile.parentFile, "bundle.name").takeIf { it.isFile }?.readText()

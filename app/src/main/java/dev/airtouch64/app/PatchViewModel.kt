@@ -116,7 +116,11 @@ class PatchViewModel(application: Application) : AndroidViewModel(application) {
         state = UiState.Loading
         viewModelScope.launch {
             val saved = withContext(Dispatchers.IO) { repository.loadSavedBundle() }
-            state = UiState.Home(bundle = saved)
+            val result = withContext(Dispatchers.IO) { runCatching { repository.downloadLatestBundle() } }
+            state = result.fold(
+                { UiState.Home(bundle = it) },
+                { error -> UiState.Home(bundle = saved, error = error.message ?: getApplication<Application>().getString(R.string.bundle_download_failed)) },
+            )
         }
     }
 }
