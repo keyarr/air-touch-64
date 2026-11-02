@@ -74,7 +74,21 @@ The previous project status recorded these successful checks:
 
 These are recorded results from the previous validation run, not checks rerun while updating this document.
 
-## Known limitation
+## Known bug: canvas touch offset with system navigation
+
+Expected: the brush follows the touch and the canvas toolbar remains visible with Android navigation shown, in both button and gesture modes.
+
+Actual: on the Galaxy A54 test setup below, showing the three-button navigation bar shifts the brush upward by about 121–122 px and hides the canvas top toolbar. Hiding the bar restores alignment and the toolbar; showing it again reproduces the failure. The user confirmed that newly drawn strokes align while navigation is hidden. This is a workaround observed during testing, not a fix.
+
+Reproduction: open a blank document in the test package, keep three-button navigation visible, and draw at multiple canvas heights. Then hide navigation with `adb shell settings put global policy_control immersive.navigation=air.org.psccrevived.pstouchtest`, draw again, and restore the prior setting. The original device setting was absent; restore it with `adb shell settings delete global policy_control`. The original PS Touch package was not replaced.
+
+On 2026-11-01, this was measured on a Galaxy A54 (`SM-A546E`), Android 15, 1080x2340, 450 dpi physical / 421 dpi override. For injected screen-coordinate touches at y=1000, 1050, and 1150, brush centers were y=878, 929, and 1028. These are approximately constant origin shifts, not evidence of scale error. The tested APK was `air.org.psccrevived.pstouchtest`, SHA-256 `dd94bd7ef42c9343b57574a3125edb70bc2692c3c88a1bc2f3ef176c0729f70e`; it had no `AIRAppEntry` inset padding and included the `getBoundHeight/Width()` patch. Hiding navigation moved those stored marks down about 125–126 px. That stored-mark comparison is not an independent touch measurement.
+
+The duplicate `AIRAppEntry` inset padding was removed, but the bug remained. The patch compiled and entered the bundle; that does not establish runtime correctness. Do not add a fixed device offset or treat hidden navigation as a fix.
+
+The failure is confirmed to depend on navigation visibility, but its runtime cause is not yet proven. Detailed bounds, code-path analysis, and test limitations are in the PS Touch Revived [inset investigation](../../psccrevived/experiments/ttpixel-arm64-test/android-smali/insettest/README.md) when both repositories are checked out as sibling directories.
+
+## Other known limitation
 
 The AIR startup splash remains because producing a custom splash requires a commercial AIR SDK license.
 
