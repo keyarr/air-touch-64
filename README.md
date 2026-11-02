@@ -3,7 +3,7 @@
 Air Touch 64 turns a supported Photoshop Touch 1.3.7 APK into an ARM64 build for modern Android devices. It applies the patches on-device, then lets you install or save the signed APK.
 
 <p align="center">
-  <img width="280" alt="Air Touch 64 app screenshot" src="https://github.com/user-attachments/assets/6878c293-9384-485d-830c-cba3bac687ff" />
+<img width="280" alt="airtouch" src="https://github.com/user-attachments/assets/a880ffbf-7c64-458b-99ee-19cdad29edc6" />
 </p>
 
 ## How it works
