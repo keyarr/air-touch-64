@@ -21,7 +21,15 @@ Air Touch 64 is an independent community project and is not affiliated with, end
 - Android 8.0 (API 26) or newer to run the patcher.
 - JDK 17 and Android SDK Platform 36 to build the app.
 
-The patched app has been tested on Android 16, including Samsung Galaxy S24 Ultra and Galaxy A54. The default AIR startup splash remains because replacing it requires a commercial AIR SDK license.
+The patched app has been tested on Android 16, including Samsung Galaxy S24 Ultra and Galaxy A54.
+
+## Known limitations
+
+- The AIR SDK flashbang appears when the app opens. Removing it requires a commercial AIR SDK license, which this project does not have.
+- Setting Comic or Posterizer to values near 1 can break the photo.
+- Camera Fill does not work and produces a white render.
+- Directional Light does not work correctly.
+- Watercolor produces odd results; it has not been confirmed whether this effect is commonly used.
 
 ## Build
 
