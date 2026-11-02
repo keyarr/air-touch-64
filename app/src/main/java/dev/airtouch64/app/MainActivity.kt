@@ -164,8 +164,14 @@ private fun HomeScreen(state: UiState.Home, onBundle: (Uri) -> Unit, onPick: (Ur
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(stringResource(R.string.patch_bundle), style = MaterialTheme.typography.titleMedium)
-                    OutlinedButton(onClick = { bundlePicker.launch(arrayOf("*/*")) }, enabled = !state.importingBundle) {
-                        Text(stringResource(if (bundle == null) R.string.choose_bundle else R.string.change_bundle))
+                    if (bundle == null) {
+                        OutlinedButton(onClick = { bundlePicker.launch(arrayOf("*/*")) }, enabled = !state.importingBundle) {
+                            Text(stringResource(R.string.choose_bundle))
+                        }
+                    } else {
+                        TextButton(onClick = { bundlePicker.launch(arrayOf("*/*")) }, enabled = !state.importingBundle) {
+                            Text(stringResource(R.string.change_bundle))
+                        }
                     }
                 }
                 if (bundle != null) {
