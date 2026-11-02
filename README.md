@@ -21,7 +21,7 @@ The bundle supports one Photoshop Touch 1.3.7 APK variant. Other builds, repacka
 
 The generated APK is signed with a key created on your device. It cannot update the Adobe-signed original; uninstall the original before installing the patched app. The key is kept in Air Touch 64's private storage and is removed if you uninstall Air Touch 64. Keep the app open while patching.
 
-The app requires Android 8.0 (API 26) or newer. The patched build has been tested on Android 16. The default AIR startup splash remains because replacing it requires a commercial AIR SDK license.
+The app requires Android 8.0 (API 26) or newer. The patched build has been tested on Android 16, including on a Samsung Galaxy S24 Ultra and Galaxy A54. The default AIR startup splash remains because replacing it requires a commercial AIR SDK license.
 
 ## Get the original APK
 
