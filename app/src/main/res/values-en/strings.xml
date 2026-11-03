@@ -10,7 +10,6 @@
     <string name="choose_bundle">Choose bundle</string>
     <string name="change_bundle">Change bundle</string>
     <string name="import_bundle_first">Import a bundle before the source APK</string>
-    <string name="bundle_download_failed">Could not download the bundle. You can select it manually.</string>
     <string name="bundle_details">%1$s · version %2$s · %3$d MiB</string>
     <string name="source_apk">Source APK</string>
     <string name="supported_version">Only Photoshop Touch 1.3.7 is supported</string>

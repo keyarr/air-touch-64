@@ -12,7 +12,7 @@ Join the [Telegram channel](https://t.me/+_VuvftJw4gY2NmUx) to get the patch bun
 
 ## How it works
 
-Choose a patch bundle and your original Photoshop Touch APK. The app checks the APK's SHA-256 and required files against the bundle, applies the SWF, DEX, resource, and ARM64 runtime updates, then assembles and signs the result. The bundle downloads automatically; you can also [download the latest bundle manually](https://github.com/keyarr/airtouch64-bundle-backend/releases) and import it in the app.
+Choose a patch bundle and your original Photoshop Touch APK. The app checks the APK's SHA-256 and required files against the bundle, applies the SWF, DEX, resource, and ARM64 runtime updates, then assembles and signs the result. Get the bundle in the [Telegram channel](https://t.me/+_VuvftJw4gY2NmUx) and import it in the app.
 
 Only the source variant listed in the bundle is supported. Other regional releases, repackaged APKs, or files with a different hash are rejected, even if they report version 1.3.7. The original APK is not included. The app links to third-party download pages for [APKMirror](https://www.apkmirror.com/apk/adobe/adobe-photoshop-touch-phone/ps-touch-1-3-7-release/) and [APKPure](https://apkpure.net/br/adobe-photoshop-touch/air.com.adobe.pstouchphone/download), but does not host or verify their downloads in advance.
 
