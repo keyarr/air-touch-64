@@ -6,6 +6,10 @@ Air Touch 64 turns a supported Photoshop Touch 1.3.7 APK into an ARM64 build for
 <img width="280" alt="airtouch" src="https://github.com/user-attachments/assets/a880ffbf-7c64-458b-99ee-19cdad29edc6" />
 </p>
 
+## Community
+
+Join the [Telegram channel](https://t.me/+_VuvftJw4gY2NmUx) to get the patch bundle for free and to follow project updates.
+
 ## How it works
 
 Choose a patch bundle and your original Photoshop Touch APK. The app checks the APK's SHA-256 and required files against the bundle, applies the SWF, DEX, resource, and ARM64 runtime updates, then assembles and signs the result. The bundle downloads automatically; you can also [download the latest bundle manually](https://github.com/keyarr/airtouch64-bundle-backend/releases) and import it in the app.
