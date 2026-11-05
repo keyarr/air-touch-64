@@ -40,6 +40,8 @@ class AbcFile private constructor(
     private val source: ByteArray,
     private val sections: List<Section>,
     private val poolLayout: PoolLayout,
+    private val methodLayout: CountedSectionLayout,
+    private val bodyLayout: CountedSectionLayout,
     private val strings: List<String>,
     private val namespaces: List<Namespace?>,
     private val multinames: List<Multiname?>,
@@ -87,6 +89,12 @@ class AbcFile private constructor(
         val instanceTraits: List<Trait>,
         val staticInitializer: Int,
         val staticTraits: List<Trait>,
+        val instanceTraitCountOffset: Int,
+        val instanceTraitCountWidth: Int,
+        val instanceTraitEnd: Int,
+        val staticTraitCountOffset: Int,
+        val staticTraitCountWidth: Int,
+        val staticTraitEnd: Int,
     )
 
     data class Trait(
@@ -230,6 +238,94 @@ class AbcFile private constructor(
         return parse(rewriteSections(edits)) to multinameIndex
     }
 
+    fun appendMethod(method: MethodInfo): Pair<AbcFile, Int> {
+        require(method.flags and 0x88 == 0) { "Optional values and parameter names are unsupported for appended methods" }
+        require(method.returnType in 0 until multinames.size && method.parameterTypes.all { it in 0 until multinames.size }) {
+            "Invalid appended method type index"
+        }
+        require(method.nameIndex in strings.indices) { "Invalid appended method name index" }
+        val encoded = ByteArrayOutputStream()
+        encoded.write(encodeU30(method.parameterTypes.size))
+        encoded.write(encodeU30(method.returnType))
+        method.parameterTypes.forEach { encoded.write(encodeU30(it)) }
+        encoded.write(encodeU30(method.nameIndex))
+        encoded.write(method.flags)
+
+        val index = methods.size
+        val section = sections[2]
+        val abc = rewriteSections(listOf(
+            SectionEdit(2, methodLayout.countOffset - section.start, methodLayout.countBytes,
+                encodeU30(methods.size + 1)),
+            SectionEdit(2, methodLayout.end - section.start, byteArrayOf(), encoded.toByteArray()),
+        ))
+        return parse(abc) to index
+    }
+
+    fun stringIndex(value: String): Int? = strings.indexOf(value).takeIf { it > 0 }
+
+    fun appendMethodBody(
+        methodIndex: Int,
+        maxStack: Int,
+        localCount: Int,
+        initialScopeDepth: Int,
+        maxScopeDepth: Int,
+        code: ByteArray,
+    ): AbcFile {
+        require(methodIndex in methods.indices && methodBody(methodIndex) == null) { "Invalid or duplicate method body" }
+        require(maxStack >= 0 && localCount >= methods[methodIndex].parameterTypes.size + 1) { "Invalid method limits" }
+        require(initialScopeDepth >= 0 && maxScopeDepth >= initialScopeDepth) { "Invalid method scope depth" }
+        val encoded = ByteArrayOutputStream()
+        encoded.write(encodeU30(methodIndex))
+        encoded.write(encodeU30(maxStack))
+        encoded.write(encodeU30(localCount))
+        encoded.write(encodeU30(initialScopeDepth))
+        encoded.write(encodeU30(maxScopeDepth))
+        encoded.write(encodeU30(code.size))
+        encoded.write(code)
+        encoded.write(encodeU30(0))
+        encoded.write(encodeU30(0))
+
+        val section = sections[6]
+        val abc = rewriteSections(listOf(
+            SectionEdit(6, bodyLayout.countOffset - section.start, bodyLayout.countBytes,
+                encodeU30(bodies.size + 1)),
+            SectionEdit(6, bodyLayout.end - section.start, byteArrayOf(), encoded.toByteArray()),
+        ))
+        return parse(abc)
+    }
+
+    fun appendMethodTrait(
+        owner: String,
+        nameIndex: Int,
+        methodIndex: Int,
+        isStatic: Boolean = false,
+        isOverride: Boolean = false,
+    ): AbcFile {
+        require(nameIndex in multinames.indices && methodIndex in methods.indices) { "Invalid method trait index" }
+        require(qualifiedName(nameIndex) != null) { "Method trait name must be a QName" }
+        require(bodies.any { it.methodIndex == methodIndex }) { "Method trait target has no body" }
+        val classInfo = classes.singleOrNull { qualifiedName(it.nameIndex) == owner }
+            ?: throw IllegalArgumentException("Expected one class $owner")
+        val traits = if (isStatic) classInfo.staticTraits else classInfo.instanceTraits
+        require(traits.none { it.nameIndex == nameIndex }) { "Method trait already exists" }
+
+        val count = traits.size
+        val countOffset = if (isStatic) classInfo.staticTraitCountOffset else classInfo.instanceTraitCountOffset
+        val countWidth = if (isStatic) classInfo.staticTraitCountWidth else classInfo.instanceTraitCountWidth
+        val end = if (isStatic) classInfo.staticTraitEnd else classInfo.instanceTraitEnd
+        val section = sections[4]
+        val trait = ByteArrayOutputStream()
+        trait.write(encodeU30(nameIndex))
+        trait.write(1 or (if (isOverride) 0x20 else 0))
+        trait.write(encodeU30(0))
+        trait.write(encodeU30(methodIndex))
+        val countBytes = source.copyOfRange(countOffset, countOffset + countWidth)
+        return parse(rewriteSections(listOf(
+            SectionEdit(4, countOffset - section.start, countBytes, encodeU30(count + 1)),
+            SectionEdit(4, end - section.start, byteArrayOf(), trait.toByteArray()),
+        )))
+    }
+
     fun qualifiedName(index: Int): String? {
         if (index == 0) return null
         val name = multinames.getOrNull(index) ?: return null
@@ -343,6 +439,11 @@ class AbcFile private constructor(
         val multinameCountBytes: ByteArray,
         val multinameEnd: Int,
     )
+    private data class CountedSectionLayout(
+        val countOffset: Int,
+        val countBytes: ByteArray,
+        val end: Int,
+    )
     private data class Namespace(val kind: Int, val name: String)
     private data class Multiname(
         val kind: Int,
@@ -405,6 +506,12 @@ class AbcFile private constructor(
                     instance.traits,
                     classInfo.first,
                     classInfo.second,
+                    instance.traitLayout.countOffset,
+                    instance.traitLayout.countWidth,
+                    instance.traitLayout.end,
+                    classInfo.third.countOffset,
+                    classInfo.third.countWidth,
+                    classInfo.third.end,
                 )
             }
             return AbcFile(
@@ -428,6 +535,8 @@ class AbcFile private constructor(
                 bytes.copyOf(),
                 sections,
                 poolLayout,
+                reader.methodLayout(),
+                reader.bodyLayout(),
                 strings,
                 namespaceEntries,
                 multinames,
@@ -441,7 +550,9 @@ class AbcFile private constructor(
         val flags: Int,
         val initializer: Int,
         val traits: List<Trait>,
+        val traitLayout: TraitGroupLayout,
     )
+    private data class TraitGroupLayout(val countOffset: Int, val countWidth: Int, val end: Int)
 
     private class Reader(private val data: ByteArray) {
         var position: Int = 0
@@ -452,11 +563,20 @@ class AbcFile private constructor(
         private var multinameCountOffset = -1
         private var multinameCountBytes = byteArrayOf()
         private var multinameEnd = -1
+        private var methodCountOffset = -1
+        private var methodCountBytes = byteArrayOf()
+        private var methodEnd = -1
+        private var bodyCountOffset = -1
+        private var bodyCountBytes = byteArrayOf()
+        private var bodyEnd = -1
+        private val traitLayouts = mutableListOf<TraitGroupLayout>()
 
         fun poolLayout() = PoolLayout(
             stringCountOffset, stringCountBytes, stringEnd,
             multinameCountOffset, multinameCountBytes, multinameEnd,
         )
+        fun methodLayout() = CountedSectionLayout(methodCountOffset, methodCountBytes, methodEnd)
+        fun bodyLayout() = CountedSectionLayout(bodyCountOffset, bodyCountBytes, bodyEnd)
 
         fun u8(): Int = take(1)[0].toInt() and 0xFF
 
@@ -607,8 +727,11 @@ class AbcFile private constructor(
         }
 
         fun methodInfos(): List<MethodInfo> {
+            methodCountOffset = position
+            val countOffset = position
             val count = checkedCount(u30())
-            return List(count) {
+            methodCountBytes = data.copyOfRange(countOffset, position)
+            val methods = List(count) {
                 val parameterCount = checkedCount(u30())
                 val returnType = u30()
                 val parameters = List(parameterCount) { u30() }
@@ -621,6 +744,8 @@ class AbcFile private constructor(
                 if (flags and 0x80 != 0) repeat(parameterCount) { u30() }
                 MethodInfo(returnType, parameters, name, flags)
             }
+            methodEnd = position
+            return methods
         }
 
         fun metadata(): Int {
@@ -643,12 +768,15 @@ class AbcFile private constructor(
                 val interfaceCount = checkedCount(u30())
                 repeat(interfaceCount) { u30() }
                 val initializer = u30()
-                InstanceInfo(name, superName, flags, initializer, traits())
+                val traits = traits()
+                InstanceInfo(name, superName, flags, initializer, traits, traitLayouts.last())
             }
         }
 
-        fun classes(count: Int): List<Pair<Int, List<Trait>>> = List(count) {
-            u30() to traits()
+        fun classes(count: Int): List<Triple<Int, List<Trait>, TraitGroupLayout>> = List(count) {
+            val initializer = u30()
+            val traits = traits()
+            Triple(initializer, traits, traitLayouts.last())
         }
 
         fun scripts(): Int {
@@ -658,8 +786,11 @@ class AbcFile private constructor(
         }
 
         fun methodBodies(): List<MethodBody> {
+            bodyCountOffset = position
+            val countOffset = position
             val count = checkedCount(u30())
-            return List(count) {
+            bodyCountBytes = data.copyOfRange(countOffset, position)
+            val bodies = List(count) {
                 val methodIndex = u30()
                 val maxStack = u30()
                 val localCount = u30()
@@ -677,11 +808,16 @@ class AbcFile private constructor(
                     codeOffset, codeLength, exceptions, traits(),
                 )
             }
+            bodyEnd = position
+            return bodies
         }
 
         private fun traits(): List<Trait> {
+            val countOffset = position
+            val countStart = position
             val count = checkedCount(u30())
-            return List(count) {
+            val countWidth = position - countStart
+            val result = List(count) {
                 val name = u30()
                 val tag = u8()
                 val kind = tag and 0x0F
@@ -712,6 +848,8 @@ class AbcFile private constructor(
                     trait
                 }
             }
+            traitLayouts += TraitGroupLayout(countOffset, countWidth, position)
+            return result
         }
     }
 }

@@ -6,6 +6,7 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import org.junit.jupiter.api.Assumptions.assumeTrue
 
 class AbcFileTest {
@@ -130,6 +131,85 @@ class AbcFileTest {
         assertContentEquals(updated.serialize(), again.serialize())
     }
 
+    @Test
+    fun appendsMethodInfoAndBodyWithoutRewritingExistingBodies() {
+        val sourcePath = System.getenv("AT64_SOURCE_SWF")
+        assumeTrue(!sourcePath.isNullOrBlank())
+        val payload = Swf.tags(File(sourcePath!!).readBytes()).single { it.type == 82 }.payload
+        val start = (4 until payload.size).first { payload[it] == 0.toByte() } + 1
+        val original = AbcFile.parse(payload.copyOfRange(start, payload.size))
+        val owner = "com.adobe.ttpixel.editor.tool::TTBrushTool"
+        val className = original.classes.single { original.qualifiedName(it.nameIndex) == owner }.nameIndex
+        val namespace = original.namespaceIndex(className)!!
+        val (withName, _) = original.appendQName(namespace, "__at64AddedMethod")
+        val methodName = withName.stringIndex("__at64AddedMethod")!!
+        val methodIndex = withName.methods.size
+        val (withMethod, appendedIndex) = withName.appendMethod(AbcFile.MethodInfo(0, emptyList(), methodName, 0))
+        assertEquals(methodIndex, appendedIndex)
+        val updated = withMethod.appendMethodBody(methodIndex, 0, 1, 0, 0, byteArrayOf(0x47))
+        assertEquals(original.methods.size + 1, updated.methods.size)
+        assertContentEquals(byteArrayOf(0x47), updated.methodCode(methodIndex))
+        assertContentEquals(withMethod.methodCode(1901), updated.methodCode(1901))
+        assertContentEquals(updated.serialize(), AbcFile.parse(updated.serialize()).serialize())
+    }
+
+    @Test
+    fun addsBrushColorTransformHelperTraitAndBody() {
+        val sourcePath = System.getenv("AT64_SOURCE_SWF")
+        assumeTrue(!sourcePath.isNullOrBlank())
+        val payload = Swf.tags(File(sourcePath!!).readBytes()).single { it.type == 82 }.payload
+        val start = (4 until payload.size).first { payload[it] == 0.toByte() } + 1
+        var abc = AbcFile.parse(payload.copyOfRange(start, payload.size))
+        val owner = "com.adobe.ttpixel.editor.tool::TTBrushTool"
+        val classInfo = abc.classes.single { abc.qualifiedName(it.nameIndex) == owner }
+        val packageNamespace = abc.namespaceIndex(classInfo.nameIndex)!!
+        val (withQName, traitName) = abc.appendQName(packageNamespace, "getDrawingColorTransform")
+        abc = withQName
+        val methodName = abc.stringIndex("getDrawingColorTransform")!!
+        val returnType = abc.multinameIndices("ColorTransform")
+            .single { abc.qualifiedName(it) == "flash.geom::ColorTransform" }
+        val brushField = abc.findTraits(owner, "iBrush", isStatic = false).single().trait.nameIndex
+        val brushMethod = abc.multinameIndices("createDrawingColorTransform")
+            .single { abc.qualifiedName(it) == "createDrawingColorTransform" }
+        val methodIndex = abc.methods.size
+        val templateBody = abc.methodBody(abc.findMethods(owner, "doWork").single().methodIndex)!!
+        abc = abc.appendMethod(AbcFile.MethodInfo(returnType, emptyList(), methodName, 0)).first
+        val code = byteArrayOf(0xD0.toByte(), 0x30, 0xD0.toByte(), 0x66) + writeU30Bytes(brushField) +
+            byteArrayOf(0x46) + writeU30Bytes(brushMethod) + byteArrayOf(0, 0x48)
+        abc = abc.appendMethodBody(
+            methodIndex, 1, 1, templateBody.initialScopeDepth, templateBody.maxScopeDepth, code,
+        )
+        abc = abc.appendMethodTrait(owner, traitName, methodIndex)
+
+        val method = abc.findMethods(owner, "getDrawingColorTransform").single()
+        assertEquals(methodIndex, method.methodIndex)
+        assertContentEquals(code, abc.methodCode(methodIndex))
+        assertEquals(1, abc.findTraits(owner, "getDrawingColorTransform", isStatic = false).size)
+    }
+
+    @Test
+    fun routesBrushWorkThroughVirtualColorTransformHelper() {
+        val sourcePath = System.getenv("AT64_SOURCE_SWF")
+        assumeTrue(!sourcePath.isNullOrBlank())
+        val output = SwfTransformations.patchStartupSyncAndBrush(File(sourcePath!!).readBytes())
+        val payload = Swf.tags(output).single { it.type == 82 }.payload
+        val start = (4 until payload.size).first { payload[it] == 0.toByte() } + 1
+        val abc = AbcFile.parse(payload.copyOfRange(start, payload.size))
+        val owner = "com.adobe.ttpixel.editor.tool::TTBrushTool"
+        val helper = abc.findMethods(owner, "getDrawingColorTransform").single()
+        assertEquals(false, helper.isStatic)
+        assertEquals(1, abc.findTraits(owner, "getDrawingColorTransform", isStatic = false).size)
+        val sourcePayload = Swf.tags(File(sourcePath).readBytes()).single { it.type == 82 }.payload
+        val sourceStart = (4 until sourcePayload.size).first { sourcePayload[it] == 0.toByte() } + 1
+        val sourceAbc = AbcFile.parse(sourcePayload.copyOfRange(sourceStart, sourcePayload.size))
+        val oldDoWork = sourceAbc.findMethods(owner, "doWork").single()
+        val newDoWork = abc.findMethods(owner, "doWork").single()
+        val oldCode = sourceAbc.methodCode(oldDoWork.methodIndex)!!
+        val newCode = abc.methodCode(newDoWork.methodIndex)!!
+        assertEquals(oldCode.size, newCode.size)
+        assertFalse(newCode.contentEquals(oldCode))
+    }
+
     private fun emptyAbc(overlongFirstPoolCount: Boolean = false): ByteArray =
         ByteArrayOutputStream().also { out ->
             out.write(byteArrayOf(0x10, 0, 0x2E, 0))
@@ -150,4 +230,8 @@ class AbcFileTest {
         }
         out.write(rest)
     }
+
+    private fun writeU30Bytes(value: Int): ByteArray = ByteArrayOutputStream().also {
+        writeU30(it, value)
+    }.toByteArray()
 }
