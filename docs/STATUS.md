@@ -72,6 +72,7 @@ Recorded from the latest validation run:
 - Bundle self-check reproduced every non-signature entry of a 345-entry reference APK reconstructed from the known-good bundle and supported source APK.
 - Host engine output from the new format 3 bundle matched all 345 reference entries, passed APK signature verification and the connected Android instrumentation test on an API 35 x86_64 emulator.
 - All eight EGL shader rendering tests passed using shaders reconstructed from the source APK.
+- All four transformed shaders compiled and drew through GLES 2 on the API 35 emulator using the generated APK. Comic, Posterize Color and Threshold also previewed on a transparent canvas in the app; Replace Color is categorized as `generic` and is not exposed in the filter menu.
 - The patched APK launched on the API 35 emulator. The About screen showed the expected project text in English, Portuguese and Japanese, including the project-source and third-party notice labels.
 - `python3 -m unittest discover -s tools`, `:engine:test` and `:app:assembleDebug` passed.
 - A previous build's full patch pipeline, signing and verification passed on a Galaxy S24 Ultra running Android 16; that device check predates the resource transformation bundle.
