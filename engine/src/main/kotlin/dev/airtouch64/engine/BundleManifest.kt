@@ -12,6 +12,8 @@ data class BundleManifest(
     val swf: SwfPatch,
     val dexPatches: List<DexPatch> = emptyList(),
     val nativeLibs: List<BundleEntry> = emptyList(),
+    val sourceCopies: List<SourceCopy> = emptyList(),
+    val resourceTransforms: List<ResourceTransform> = emptyList(),
     val resourceOverrides: List<BundleEntry> = emptyList(),
     val steps: List<PatchStepInfo> = emptyList(),
 )
@@ -52,6 +54,21 @@ data class DexPatch(
 data class BundleEntry(
     val entry: String,
     val bundlePath: String,
+)
+
+@Serializable
+data class SourceCopy(
+    val sourceEntry: String,
+    val entry: String,
+    val sha256: String,
+)
+
+@Serializable
+data class ResourceTransform(
+    val entry: String,
+    val operation: String,
+    val inputSha256: String,
+    val outputSha256: String,
 )
 
 @Serializable

@@ -16,20 +16,21 @@ import javax.crypto.spec.PBEKeySpec
 
 object BundleCrypto {
     private const val MAGIC = "AT64"
-    private const val VERSION = 2
+    private const val VERSION = 3
     private const val MAX_HEADER = 1024 * 1024
     private val json = Json { ignoreUnknownKeys = true }
 
     fun readHeader(bundle: File): BundleHeader = bundle.inputStream().use { raw ->
         val input = DataInputStream(BufferedInputStream(raw))
         check(ByteArray(4).also(input::readFully).decodeToString() == MAGIC) { "Invalid AT64 magic" }
-        check(input.readInt() == VERSION) { "Unsupported bundle format" }
+        val format = input.readInt()
+        check(format in 2..VERSION) { "Unsupported bundle format" }
         input.skipFully(16 + 12)
         val length = input.readInt()
         require(length in 1..MAX_HEADER) { "Invalid bundle header length" }
         val bytes = ByteArray(length).also(input::readFully)
         json.decodeFromString<BundleHeader>(bytes.decodeToString()).also {
-            require(it.formatVersion == VERSION) { "Unsupported bundle header version" }
+            require(it.formatVersion == format) { "Unsupported bundle header version" }
         }
     }
 
@@ -37,7 +38,8 @@ object BundleCrypto {
         val input = DataInputStream(BufferedInputStream(bundle.inputStream()))
         try {
             check(ByteArray(4).also(input::readFully).decodeToString() == MAGIC) { "Invalid AT64 magic" }
-            check(input.readInt() == VERSION) { "Unsupported bundle format" }
+            val format = input.readInt()
+            check(format in 2..VERSION) { "Unsupported bundle format" }
             val salt = ByteArray(16).also(input::readFully)
             val iv = ByteArray(12).also(input::readFully)
             val length = input.readInt()
@@ -45,7 +47,7 @@ object BundleCrypto {
             val header = ByteArray(length).also(input::readFully)
             json.decodeFromString<BundleHeader>(header.decodeToString())
             val sourceHeader = json.decodeFromString<BundleHeader>(header.decodeToString())
-            require(sourceHeader.formatVersion == VERSION) { "Unsupported bundle header version" }
+            require(sourceHeader.formatVersion == format) { "Unsupported bundle header version" }
             val key = deriveKey(sourceApk, salt, sourceHeader.source.swfEntry)
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, iv))
@@ -68,6 +70,7 @@ object BundleCrypto {
             }
             val manifest = entries["manifest.json"]?.let { json.decodeFromString<BundleManifest>(it.decodeToString()) }
                 ?: error("Bundle has no manifest.json")
+            require(manifest.formatVersion == format - 1) { "Unsupported bundle manifest version" }
             return manifest to entries
         } catch (error: AEADBadTagException) {
             throw IllegalArgumentException("Source APK does not match this bundle or the bundle is corrupted", error)

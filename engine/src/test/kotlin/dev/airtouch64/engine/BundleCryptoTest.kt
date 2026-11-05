@@ -65,7 +65,7 @@ class BundleCryptoTest {
                 z.writestr('assets/CABConfig.xml', b'config')
                 z.writestr('classes.dex', b'dex')
             manifest = {
-                'formatVersion': 1, 'name': 'python-fixture', 'version': '1',
+                'formatVersion': 2, 'name': 'python-fixture', 'version': '1',
                 'source': {'sha256': ['0' * 64], 'requiredEntries': ['assets/TTPixel.swf', 'assets/CABConfig.xml'], 'swfEntry': 'assets/TTPixel.swf'},
                 'swf': {'patch': 'patches/swf.bdf', 'sourceSha256': 'a', 'resultSha256': 'b'}, 'steps': []
             }

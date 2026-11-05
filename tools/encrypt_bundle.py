@@ -2,6 +2,7 @@
 """Encrypt a patch ZIP as an AT64 bundle using content-derived source APK key material."""
 import argparse
 import hashlib
+import io
 import json
 import pathlib
 import secrets
@@ -11,14 +12,14 @@ import zipfile
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 MAGIC = b"AT64"
-VERSION = 2
+VERSION = 3
 
 
 def encrypt_bytes(source: pathlib.Path, archive_bytes: bytes) -> bytes:
-    import io
-
     with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
         manifest = json.loads(archive.read("manifest.json"))
+    if manifest.get("formatVersion") != VERSION - 1:
+        raise ValueError("unsupported bundle manifest version")
     source_spec = manifest["source"]
     digest = hashlib.sha512()
     with zipfile.ZipFile(source) as archive:
@@ -29,8 +30,9 @@ def encrypt_bytes(source: pathlib.Path, archive_bytes: bytes) -> bytes:
     salt, nonce = secrets.token_bytes(16), secrets.token_bytes(12)
     password = digest.hexdigest().encode("ascii")
     key = hashlib.pbkdf2_hmac("sha256", password, salt, 120_000, dklen=32)
-    header = json.dumps({key: manifest[key] for key in ("formatVersion", "name", "version", "source", "steps") if key in manifest}, separators=(",", ":"), ensure_ascii=False).encode()
-    header = header.replace(b'"formatVersion":1', b'"formatVersion":2', 1)
+    header_data = {key: manifest[key] for key in ("formatVersion", "name", "version", "source", "steps") if key in manifest}
+    header_data["formatVersion"] = VERSION
+    header = json.dumps(header_data, separators=(",", ":"), ensure_ascii=False).encode()
     ciphertext = AESGCM(key).encrypt(nonce, archive_bytes, header)
     return MAGIC + struct.pack(">I", VERSION) + salt + nonce + struct.pack(">I", len(header)) + header + ciphertext
 
@@ -54,7 +56,12 @@ def decrypt_bytes(source: pathlib.Path, bundle_bytes: bytes) -> bytes:
             digest.update(struct.pack(">Q", len(data)))
             digest.update(data)
     key = hashlib.pbkdf2_hmac("sha256", digest.hexdigest().encode("ascii"), salt, 120_000, dklen=32)
-    return AESGCM(key).decrypt(nonce, bundle_bytes[offset:], header)
+    plaintext = AESGCM(key).decrypt(nonce, bundle_bytes[offset:], header)
+    with zipfile.ZipFile(io.BytesIO(plaintext)) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+    if manifest.get("formatVersion") != header_data["formatVersion"] - 1:
+        raise ValueError("unsupported bundle manifest version")
+    return plaintext
 
 
 def main() -> None:

@@ -77,6 +77,11 @@ class PatchEngine(private val workspace: File) {
         val steps = mutableListOf<String>()
         var entryCount = 0
         val (manifest, bundleEntries) = BundleCrypto.decryptEntries(bundle, source)
+        val resourceOwners = manifest.resourceOverrides.map { it.entry } +
+            manifest.resourceTransforms.map { it.entry } + manifest.sourceCopies.map { it.entry }
+        check(resourceOwners.size == resourceOwners.toSet().size) {
+            "Bundle declares multiple owners for a resource entry"
+        }
 
         fun step(id: String) {
             steps += id
@@ -135,6 +140,28 @@ class PatchEngine(private val workspace: File) {
             for (override in manifest.resourceOverrides) {
                 resources[override.entry] = readBundle(bundleEntries, override.bundlePath)
             }
+            for (transform in manifest.resourceTransforms) {
+                val input = resources[transform.entry]
+                    ?: error("Resource transformation source missing: ${transform.entry}")
+                check(sha256(input) == transform.inputSha256) {
+                    "Resource transformation input hash mismatch: ${transform.entry}"
+                }
+                val result = ResourceTransformations.apply(transform.entry, transform.operation, input)
+                check(sha256(result) == transform.outputSha256) {
+                    "Resource transformation output hash mismatch: ${transform.entry}"
+                }
+                resources[transform.entry] = result
+            }
+            val sourceCopies = manifest.sourceCopies.associate { copy ->
+                val bytes = readEntry(source, copy.sourceEntry)
+                check(sha256(bytes) == copy.sha256) {
+                    "Arquivo de origem inesperado: ${copy.sourceEntry}"
+                }
+                copy.entry to bytes
+            }
+            check(sourceCopies.size == manifest.sourceCopies.size) {
+                "Destino duplicado em cópias da origem"
+            }
             onEvent(PatchEvent.Message("Recursos: ${resources.size} arquivos"))
             done("resources")
 
@@ -149,6 +176,10 @@ class PatchEngine(private val workspace: File) {
                 entries[name] = dexOut[name] ?: data
             }
             entries.putAll(resources)
+            for ((entry, data) in sourceCopies) {
+                check(entry !in entries) { "Destino de cópia já declarado: $entry" }
+                entries[entry] = data
+            }
             entries[swfEntry] = swfOut
             for (lib in manifest.nativeLibs) {
                 entries[lib.entry] = readBundle(bundleEntries, lib.bundlePath)

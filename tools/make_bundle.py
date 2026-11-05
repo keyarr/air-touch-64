@@ -20,10 +20,23 @@ import zipfile
 
 import bsdiff4
 from encrypt_bundle import encrypt_bytes
+from resource_transforms import apply as transform_resource
 
 SWF_ENTRY = "assets/TTPixel.swf"
 RESOURCE_PREFIX = "assets/resource/"
 SIGNATURE_NAMES = {"META-INF/MANIFEST.MF"}
+SOURCE_COPIES = [
+    ("assets/CABConfig.xml", "assets/CABConfig.xml"),
+    ("assets/META-INF/AIR/extensions/air.com.adobe.cc.PushNotification/library.swf", "assets/META-INF/AIR/extensions/air.com.adobe.cc.PushNotification/META-INF/ANE/library.swf"),
+    ("assets/META-INF/AIR/extensions/air.com.adobe.cc.PushNotification/library.swf", "assets/META-INF/AIR/extensions/air.com.adobe.cc.PushNotification/META-INF/ANE/default/library.swf"),
+    ("assets/META-INF/AIR/extensions/air.com.adobe.cc.sync.SyncEngine/library.swf", "assets/META-INF/AIR/extensions/air.com.adobe.cc.sync.SyncEngine/META-INF/ANE/library.swf"),
+    ("assets/META-INF/AIR/extensions/air.com.adobe.cc.sync.SyncEngine/library.swf", "assets/META-INF/AIR/extensions/air.com.adobe.cc.sync.SyncEngine/META-INF/ANE/default/library.swf"),
+    ("res/drawable/mp_warning_32x32_n.png", "res/RJ.png"),
+    ("res/raw/startga.html", "res/fE.html"),
+    ("res/raw/adobelogo.gif", "res/nZ.gif"),
+    ("res/raw/rgba8888", "res/b8"),
+    ("res/raw/rgba8888", "res/iv"),
+]
 
 
 def sha256(data: bytes) -> str:
@@ -55,6 +68,13 @@ def main() -> None:
     final = read_zip(args.final)
     source = read_zip(args.source)
 
+    source_copies = []
+    for source_entry, entry in SOURCE_COPIES:
+        data = source[source_entry]
+        if final.get(entry) != data:
+            raise SystemExit(f"source copy does not match final APK: {source_entry} -> {entry}")
+        source_copies.append({"sourceEntry": source_entry, "entry": entry, "sha256": sha256(data)})
+
     source_swf = source[SWF_ENTRY]
     final_swf = final[SWF_ENTRY]
     swf_patch = bsdiff4.diff(source_swf, final_swf)
@@ -78,11 +98,26 @@ def main() -> None:
         dex_deltas[f"patches/{name}.bdf"] = delta
 
     overrides = []
+    resource_transforms = []
     for name in sorted(final):
         if not name.startswith(RESOURCE_PREFIX):
             continue
         if source.get(name) == final[name]:
             continue
+        if name.endswith("application.zstrings") or name.endswith("ttgallerysettingsdetailpanelmodule.cabmod") or name.startswith("assets/resource/application/filters/") and name.endswith(".fs"):
+            original = source[name]
+            transformed = transform_resource(name, original)
+            if transformed != final[name]:
+                raise SystemExit(f"resource transformation does not match final APK: {name}")
+            resource_transforms.append({
+                "entry": name,
+                "operation": "resource-v1",
+                "inputSha256": sha256(original),
+                "outputSha256": sha256(transformed),
+            })
+            continue
+        if name != "assets/resource/application/about.txt":
+            raise SystemExit(f"unclassified resource difference: {name}")
         overrides.append({"entry": name, "bundlePath": f"overrides/{name}"})
 
     native_libs = []
@@ -95,17 +130,17 @@ def main() -> None:
     for name, data in base.items():
         if is_signature(name):
             continue
-        if name == SWF_ENTRY or name.startswith(RESOURCE_PREFIX):
+        if name == SWF_ENTRY or name.startswith(RESOURCE_PREFIX) or name in {entry for _, entry in SOURCE_COPIES}:
             continue
         shell[name] = data
 
     manifest = {
-        "formatVersion": 1,
+        "formatVersion": 2,
         "name": args.name,
         "version": args.version,
         "source": {
             "sha256": [sha256(args.source.read_bytes())],
-            "requiredEntries": [SWF_ENTRY, "assets/CABConfig.xml"],
+            "requiredEntries": sorted({SWF_ENTRY, *(entry for entry, _ in SOURCE_COPIES)}),
             "swfEntry": SWF_ENTRY,
         },
         "swf": {
@@ -116,6 +151,8 @@ def main() -> None:
         "dexPatches": dex_patches,
         "nativeLibs": native_libs,
         "resourceOverrides": overrides,
+        "resourceTransforms": resource_transforms,
+        "sourceCopies": source_copies,
         "steps": [
             {"id": "validate", "name": "Validar APK", "description": "Confere hash e arquivos esperados do PS Touch."},
             {"id": "swf", "name": "Patch do SWF", "description": "Aplica startup, splash, camera e sync no TTPixel.swf."},
@@ -132,6 +169,10 @@ def main() -> None:
     for name, data in source.items():
         if name.startswith(RESOURCE_PREFIX):
             rebuilt[name] = data
+    for copy in source_copies:
+        rebuilt[copy["entry"]] = source[copy["sourceEntry"]]
+    for transform in resource_transforms:
+        rebuilt[transform["entry"]] = transform_resource(transform["entry"], source[transform["entry"]])
     for override in overrides:
         rebuilt[override["entry"]] = final[override["entry"]]
     rebuilt[SWF_ENTRY] = final[SWF_ENTRY]

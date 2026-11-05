@@ -21,7 +21,7 @@ class EncryptBundleTest(unittest.TestCase):
                     archive.writestr(name, data)
             output = io.BytesIO()
             manifest = {
-                "formatVersion": 1,
+                "formatVersion": 2,
                 "name": "sample",
                 "version": "1",
                 "source": {
