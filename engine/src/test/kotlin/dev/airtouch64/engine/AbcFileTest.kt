@@ -28,6 +28,37 @@ class AbcFileTest {
     }
 
     @Test
+    fun growsMethodCountAcrossU30WidthBoundary() {
+        val source = abcWithMethodCount(127)
+        val abc = AbcFile.parse(source)
+        val (updated, methodIndex) = abc.appendMethod(AbcFile.MethodInfo(0, emptyList(), 0, 0))
+
+        assertEquals(127, methodIndex)
+        assertEquals(128, updated.methods.size)
+        assertEquals(source.size + 5, updated.serialize().size)
+        assertContentEquals(updated.serialize(), AbcFile.parse(updated.serialize()).serialize())
+    }
+
+    @Test
+    fun rejectsResizingMethodWithExceptionHandler() {
+        val base = emptyAbc()
+        var abc = AbcFile.parse(base).appendMethod(AbcFile.MethodInfo(0, emptyList(), 0, 0)).first
+        abc = abc.appendMethodBody(0, 0, 1, 0, 0, byteArrayOf(0x47))
+        val body = abc.methodBody(0)!!
+        val bodySectionStart = base.size - 1 + 4
+        val exceptionOffset = body.codeOffset + body.codeLength - bodySectionStart
+        val exceptionTable = byteArrayOf(1, 0, 1, 0, 0, 0)
+        val withException = AbcFile.parse(abc.rewriteSections(listOf(
+            AbcFile.SectionEdit(6, exceptionOffset, byteArrayOf(0), exceptionTable),
+        )))
+
+        assertEquals(1, withException.methodBody(0)!!.exceptions.size)
+        assertFailsWith<IllegalArgumentException> {
+            withException.replaceMethodCode(0, byteArrayOf(0x47, 0x47))
+        }
+    }
+
+    @Test
     fun rewritesSelectedAbcSectionWhilePreservingOtherSections() {
         val source = emptyAbc()
         val rewritten = AbcFile.parse(source).rewriteSections(
@@ -137,6 +168,22 @@ class AbcFileTest {
         val (again, sameIndex) = updated.appendQName(namespace, "__at64PoolProbe")
         assertEquals(index, sameIndex)
         assertContentEquals(updated.serialize(), again.serialize())
+    }
+
+    @Test
+    fun methodLookupExposesAmbiguousStaticAndInstanceTraits() {
+        val sourcePath = System.getenv("AT64_SOURCE_SWF")
+        assumeTrue(!sourcePath.isNullOrBlank())
+        val payload = Swf.tags(File(sourcePath!!).readBytes()).single { it.type == 82 }.payload
+        val start = (4 until payload.size).first { payload[it] == 0.toByte() } + 1
+        val abc = AbcFile.parse(payload.copyOfRange(start, payload.size))
+        val owner = "com.adobe.ttpixel.editor.tool::TTBrushTool"
+        val method = abc.findMethods(owner, "doWork").single()
+        val nameIndex = abc.findTraits(owner, "doWork", isStatic = false).single().trait.nameIndex
+        val ambiguous = abc.appendMethodTrait(owner, nameIndex, method.methodIndex, isStatic = true)
+
+        assertEquals(2, ambiguous.findMethods(owner, "doWork").size)
+        assertFailsWith<IllegalArgumentException> { ambiguous.findMethods(owner, "doWork").single() }
     }
 
     @Test
@@ -297,6 +344,19 @@ class AbcFileTest {
             }
             repeat(5) { writeU30(out, 0) }
         }.toByteArray()
+
+    private fun abcWithMethodCount(count: Int): ByteArray = ByteArrayOutputStream().also { out ->
+        out.write(byteArrayOf(0x10, 0, 0x2E, 0))
+        repeat(7) { writeU30(out, 0) }
+        writeU30(out, count)
+        repeat(count) {
+            writeU30(out, 0)
+            writeU30(out, 0)
+            writeU30(out, 0)
+            out.write(0)
+        }
+        repeat(4) { writeU30(out, 0) }
+    }.toByteArray()
 
     private fun writeU30(out: ByteArrayOutputStream, value: Int) {
         var rest = value

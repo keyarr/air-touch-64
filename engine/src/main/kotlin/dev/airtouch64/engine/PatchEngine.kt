@@ -106,25 +106,7 @@ class PatchEngine(private val workspace: File) {
             step("swf")
             val swfEntry = manifest.source.swfEntry
             val swfRaw = readEntry(source, swfEntry)
-            check(sha256(swfRaw) == manifest.swf.sourceSha256) {
-                "SWF de origem não confere com o bundle"
-            }
-            val swfOut = when (manifest.formatVersion) {
-                1, 2 -> {
-                    require(manifest.swf.operation == null) { "Legacy bundle cannot declare a SWF operation" }
-                    val patchPath = requireNotNull(manifest.swf.patch) { "Legacy bundle has no SWF patch" }
-                    BsPatch.patch(swfRaw, readBundle(bundleEntries, patchPath))
-                }
-                3 -> {
-                    require(manifest.swf.patch == null) { "Transform bundle cannot include a SWF delta" }
-                    require(manifest.swf.operation == "local-transform-v1") { "Unsupported SWF operation" }
-                    SwfTransformations.patchStartupSyncBrushAndPaint(swfRaw)
-                }
-                else -> error("Unsupported bundle manifest version")
-            }
-            check(sha256(swfOut) == manifest.swf.resultSha256) {
-                "SWF patch produziu um arquivo inesperado"
-            }
+            val swfOut = applySwfOperation(swfRaw, manifest.formatVersion, manifest.swf, bundleEntries)
             onEvent(PatchEvent.Message("SWF: ${swfOut.size / 1024} KiB output"))
             done("swf")
 
@@ -350,4 +332,32 @@ class PatchEngine(private val workspace: File) {
             MessageDigest.getInstance("SHA-256").digest(bytes)
                 .joinToString("") { "%02x".format(it) }
     }
+}
+
+internal fun applySwfOperation(
+    source: ByteArray,
+    manifestVersion: Int,
+    swf: SwfPatch,
+    entries: Map<String, ByteArray>,
+): ByteArray {
+    check(PatchEngine.sha256(source) == swf.sourceSha256) {
+        "SWF de origem não confere com o bundle"
+    }
+    val output = when (manifestVersion) {
+        1, 2 -> {
+            require(swf.operation == null) { "Legacy bundle cannot declare a SWF operation" }
+            val patchPath = requireNotNull(swf.patch) { "Legacy bundle has no SWF patch" }
+            BsPatch.patch(source, entries[patchPath] ?: error("Entrada ausente no bundle: $patchPath"))
+        }
+        3 -> {
+            require(swf.patch == null) { "Transform bundle cannot include a SWF delta" }
+            require(swf.operation == "local-transform-v1") { "Unsupported SWF operation" }
+            SwfTransformations.patchStartupSyncBrushAndPaint(source)
+        }
+        else -> error("Unsupported bundle manifest version")
+    }
+    check(PatchEngine.sha256(output) == swf.resultSha256) {
+        "SWF patch produziu um arquivo inesperado"
+    }
+    return output
 }

@@ -30,6 +30,16 @@ class Avm2CodeTest {
     }
 
     @Test
+    fun relocatesLookupSwitchTargetsAcrossInsertedInstructions() {
+        val code = byteArrayOf(0x1B, 8, 0, 0, 0, 8, 0, 0, 0x47)
+        val result = Avm2Code.insert(
+            code,
+            listOf(Avm2Code.Insertion(8, byteArrayOf(0x02, 0x02), branchTargetsAfter = true)),
+        )
+        assertContentEquals(byteArrayOf(0x1B, 10, 0, 0, 0, 10, 0, 0, 0x02, 0x02, 0x47), result)
+    }
+
+    @Test
     fun rejectsInsertionInsideInstructionAndUnknownOpcodes() {
         assertFailsWith<IllegalArgumentException> {
             Avm2Code.insert(byteArrayOf(0x10, 0, 0, 0, 0x47), listOf(Avm2Code.Insertion(2, byteArrayOf(0x02))))
