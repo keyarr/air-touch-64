@@ -149,8 +149,10 @@ class AbcFileTest {
         val updated = withMethod.appendMethodBody(methodIndex, 0, 1, 0, 0, byteArrayOf(0x47))
         assertEquals(original.methods.size + 1, updated.methods.size)
         assertContentEquals(byteArrayOf(0x47), updated.methodCode(methodIndex))
-        assertContentEquals(withMethod.methodCode(1901), updated.methodCode(1901))
-        assertContentEquals(updated.serialize(), AbcFile.parse(updated.serialize()).serialize())
+        val expanded = updated.replaceMethodCode(methodIndex, byteArrayOf(0x47, 0x02))
+        assertContentEquals(byteArrayOf(0x47, 0x02), expanded.methodCode(methodIndex))
+        assertContentEquals(withMethod.methodCode(1901), expanded.methodCode(1901))
+        assertContentEquals(expanded.serialize(), AbcFile.parse(expanded.serialize()).serialize())
     }
 
     @Test

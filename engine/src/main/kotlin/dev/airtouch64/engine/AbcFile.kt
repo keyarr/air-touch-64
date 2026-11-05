@@ -118,6 +118,8 @@ class AbcFile private constructor(
         val localCount: Int,
         val initialScopeDepth: Int,
         val maxScopeDepth: Int,
+        val codeLengthOffset: Int,
+        val codeLengthWidth: Int,
         val codeOffset: Int,
         val codeLength: Int,
         val exceptions: List<ExceptionInfo>,
@@ -292,6 +294,27 @@ class AbcFile private constructor(
             SectionEdit(6, bodyLayout.end - section.start, byteArrayOf(), encoded.toByteArray()),
         ))
         return parse(abc)
+    }
+
+    fun replaceMethodCode(methodIndex: Int, replacement: ByteArray): AbcFile {
+        val body = methodBody(methodIndex) ?: throw IllegalArgumentException("Method has no body")
+        require(body.exceptions.isEmpty()) { "Method-code resizing with exception handlers is unsupported" }
+        val section = sections[6]
+        val edits = listOf(
+            SectionEdit(
+                6,
+                body.codeLengthOffset - section.start,
+                source.copyOfRange(body.codeLengthOffset, body.codeLengthOffset + body.codeLengthWidth),
+                encodeU30(replacement.size),
+            ),
+            SectionEdit(
+                6,
+                body.codeOffset - section.start,
+                source.copyOfRange(body.codeOffset, body.codeOffset + body.codeLength),
+                replacement,
+            ),
+        )
+        return parse(rewriteSections(edits))
     }
 
     fun appendMethodTrait(
@@ -800,7 +823,10 @@ class AbcFile private constructor(
                 val localCount = u30()
                 val initialScopeDepth = u30()
                 val maxScopeDepth = u30()
+                val codeLengthOffset = position
+                val codeLengthStart = position
                 val codeLength = u30()
+                val codeLengthWidth = position - codeLengthStart
                 val codeOffset = position
                 skip(codeLength)
                 val exceptionCount = checkedCount(u30(), 5)
@@ -809,7 +835,7 @@ class AbcFile private constructor(
                 }
                 MethodBody(
                     methodIndex, maxStack, localCount, initialScopeDepth, maxScopeDepth,
-                    codeOffset, codeLength, exceptions, traits(),
+                    codeLengthOffset, codeLengthWidth, codeOffset, codeLength, exceptions, traits(),
                 )
             }
             bodyEnd = position
