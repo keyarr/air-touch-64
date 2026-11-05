@@ -93,6 +93,50 @@ class BundleCryptoTest {
         }
     }
 
+    @Test
+    fun decryptsFormatFourPythonBundleWithoutSwfDelta() {
+        val directory = kotlin.io.path.createTempDirectory("at64-transform-bundle-").toFile()
+        val source = createSource(byteArrayOf(3, 2, 1))
+        val bundle = File(directory, "bundle.at64")
+        val script = """
+            import io, json, pathlib, sys, zipfile
+            sys.path.insert(0, 'tools')
+            from encrypt_bundle import encrypt_bytes
+            root = pathlib.Path(sys.argv[1])
+            source = pathlib.Path(sys.argv[2])
+            manifest = {
+                'formatVersion': 3, 'name': 'transform', 'version': '1',
+                'source': {'sha256': ['0' * 64], 'requiredEntries': ['assets/TTPixel.swf'], 'swfEntry': 'assets/TTPixel.swf'},
+                'swf': {'operation': 'local-transform-v1', 'sourceSha256': 'input', 'resultSha256': 'output'},
+                'steps': []
+            }
+            raw = io.BytesIO()
+            with zipfile.ZipFile(raw, 'w') as z:
+                z.writestr('manifest.json', json.dumps(manifest))
+            (root / 'bundle.at64').write_bytes(encrypt_bytes(source, raw.getvalue()))
+        """.trimIndent()
+        try {
+            val currentDir = File(System.getProperty("user.dir"))
+            val projectRoot = if (File(currentDir, "tools/encrypt_bundle.py").isFile) currentDir else currentDir.parentFile
+            val process = ProcessBuilder("python3", "-c", script, directory.absolutePath, source.absolutePath)
+                .directory(projectRoot)
+                .redirectErrorStream(true)
+                .start()
+            val output = process.inputStream.bufferedReader().readText()
+            assertEquals(0, process.waitFor(), output)
+            val header = BundleCrypto.readHeader(bundle)
+            assertEquals(4, header.formatVersion)
+            val (manifest, entries) = BundleCrypto.decryptEntries(bundle, source)
+            assertEquals(3, manifest.formatVersion)
+            assertEquals("local-transform-v1", manifest.swf.operation)
+            assertEquals(null, manifest.swf.patch)
+            assertEquals(false, entries.containsKey("patches/swf.bdf"))
+        } finally {
+            source.delete()
+            directory.deleteRecursively()
+        }
+    }
+
     private fun withFixtures(block: (File, File, BundleHeader) -> Unit) {
         val source = createSource(byteArrayOf(1, 2, 3, 4))
         val bundle = File.createTempFile("sample", ".at64")

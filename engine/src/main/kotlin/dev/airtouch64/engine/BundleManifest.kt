@@ -36,9 +36,10 @@ data class SourceSpec(
 
 @Serializable
 data class SwfPatch(
-    val patch: String,
+    val patch: String? = null,
     val sourceSha256: String,
     val resultSha256: String,
+    val operation: String? = null,
 )
 
 @Serializable

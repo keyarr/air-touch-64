@@ -30,3 +30,16 @@ dependencies {
 tasks.test {
     useJUnitPlatform()
 }
+
+tasks.register<JavaExec>("transformSwf") {
+    group = "application"
+    description = "Apply the audited local SWF transformation"
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("dev.airtouch64.engine.SwfTransformMainKt")
+    val input = providers.gradleProperty("swfInput")
+    val output = providers.gradleProperty("swfOutput")
+    doFirst {
+        require(input.isPresent && output.isPresent) { "set -PswfInput and -PswfOutput" }
+        args(input.get(), output.get())
+    }
+}

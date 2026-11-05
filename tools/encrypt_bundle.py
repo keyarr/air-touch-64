@@ -12,14 +12,16 @@ import zipfile
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 MAGIC = b"AT64"
-VERSION = 3
+VERSION = 4
 
 
 def encrypt_bytes(source: pathlib.Path, archive_bytes: bytes) -> bytes:
     with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
         manifest = json.loads(archive.read("manifest.json"))
-    if manifest.get("formatVersion") != VERSION - 1:
+    manifest_version = manifest.get("formatVersion")
+    if type(manifest_version) is not int or manifest_version not in range(1, VERSION):
         raise ValueError("unsupported bundle manifest version")
+    version = manifest_version + 1
     source_spec = manifest["source"]
     digest = hashlib.sha512()
     with zipfile.ZipFile(source) as archive:
@@ -31,16 +33,19 @@ def encrypt_bytes(source: pathlib.Path, archive_bytes: bytes) -> bytes:
     password = digest.hexdigest().encode("ascii")
     key = hashlib.pbkdf2_hmac("sha256", password, salt, 120_000, dklen=32)
     header_data = {key: manifest[key] for key in ("formatVersion", "name", "version", "source", "steps") if key in manifest}
-    header_data["formatVersion"] = VERSION
+    header_data["formatVersion"] = version
     header = json.dumps(header_data, separators=(",", ":"), ensure_ascii=False).encode()
     ciphertext = AESGCM(key).encrypt(nonce, archive_bytes, header)
-    return MAGIC + struct.pack(">I", VERSION) + salt + nonce + struct.pack(">I", len(header)) + header + ciphertext
+    return MAGIC + struct.pack(">I", version) + salt + nonce + struct.pack(">I", len(header)) + header + ciphertext
 
 
 def decrypt_bytes(source: pathlib.Path, bundle_bytes: bytes) -> bytes:
     offset = 4
-    if bundle_bytes[:4] != MAGIC or struct.unpack_from(">I", bundle_bytes, offset)[0] != VERSION:
+    if bundle_bytes[:4] != MAGIC:
         raise ValueError("invalid AT64 bundle")
+    version = struct.unpack_from(">I", bundle_bytes, offset)[0]
+    if version not in range(2, VERSION + 1):
+        raise ValueError("unsupported AT64 bundle version")
     offset += 4
     salt, nonce = bundle_bytes[offset:offset + 16], bundle_bytes[offset + 16:offset + 28]
     offset += 28
@@ -59,7 +64,7 @@ def decrypt_bytes(source: pathlib.Path, bundle_bytes: bytes) -> bytes:
     plaintext = AESGCM(key).decrypt(nonce, bundle_bytes[offset:], header)
     with zipfile.ZipFile(io.BytesIO(plaintext)) as archive:
         manifest = json.loads(archive.read("manifest.json"))
-    if manifest.get("formatVersion") != header_data["formatVersion"] - 1:
+    if manifest.get("formatVersion") != version - 1 or header_data.get("formatVersion") != version:
         raise ValueError("unsupported bundle manifest version")
     return plaintext
 

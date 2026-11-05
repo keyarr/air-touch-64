@@ -47,7 +47,7 @@ class DevicePatchTest {
         }
 
         assertTrue("Output APK must exist", result.output.isFile)
-        assertEquals(345, result.entries)
+        assertEquals(353, result.entries)
 
         // 5. Verify signature on device
         val certs = ApkSigning.verify(result.output)

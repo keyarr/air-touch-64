@@ -12,6 +12,13 @@ import org.junit.jupiter.api.Assumptions.assumeTrue
 
 class AbcFileTest {
     @Test
+    fun rejectsUnsupportedCompositeTransformInput() {
+        assertFailsWith<IllegalArgumentException> {
+            SwfTransformations.patchStartupSyncBrushAndPaint(byteArrayOf())
+        }
+    }
+
+    @Test
     fun roundTripsEmptyAbcAndPreservesOverlongU30Width() {
         val canonical = emptyAbc()
         assertContentEquals(canonical, AbcFile.parse(canonical).serialize())

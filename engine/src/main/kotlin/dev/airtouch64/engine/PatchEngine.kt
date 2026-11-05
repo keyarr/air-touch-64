@@ -109,12 +109,23 @@ class PatchEngine(private val workspace: File) {
             check(sha256(swfRaw) == manifest.swf.sourceSha256) {
                 "SWF de origem não confere com o bundle"
             }
-            val patchBytes = readBundle(bundleEntries, manifest.swf.patch)
-            val swfOut = BsPatch.patch(swfRaw, patchBytes)
+            val swfOut = when (manifest.formatVersion) {
+                1, 2 -> {
+                    require(manifest.swf.operation == null) { "Legacy bundle cannot declare a SWF operation" }
+                    val patchPath = requireNotNull(manifest.swf.patch) { "Legacy bundle has no SWF patch" }
+                    BsPatch.patch(swfRaw, readBundle(bundleEntries, patchPath))
+                }
+                3 -> {
+                    require(manifest.swf.patch == null) { "Transform bundle cannot include a SWF delta" }
+                    require(manifest.swf.operation == "local-transform-v1") { "Unsupported SWF operation" }
+                    SwfTransformations.patchStartupSyncBrushAndPaint(swfRaw)
+                }
+                else -> error("Unsupported bundle manifest version")
+            }
             check(sha256(swfOut) == manifest.swf.resultSha256) {
                 "SWF patch produziu um arquivo inesperado"
             }
-            onEvent(PatchEvent.Message("SWF: ${patchBytes.size / 1024} KiB de patch aplicados"))
+            onEvent(PatchEvent.Message("SWF: ${swfOut.size / 1024} KiB output"))
             done("swf")
 
             step("dex")

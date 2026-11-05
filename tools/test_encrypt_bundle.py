@@ -1,4 +1,5 @@
 import io
+import struct
 import json
 import pathlib
 import tempfile
@@ -45,6 +46,37 @@ class EncryptBundleTest(unittest.TestCase):
                 archive.writestr("classes.dex", b"dex bytes")
             with self.assertRaises(Exception):
                 decrypt_bytes(wrong, encrypted)
+
+    def test_transform_manifest_uses_at64_format_four(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = pathlib.Path(directory) / "source.apk"
+            with zipfile.ZipFile(source, "w") as archive:
+                archive.writestr("assets/TTPixel.swf", b"swf bytes")
+                archive.writestr("assets/CABConfig.xml", b"config")
+                archive.writestr("classes.dex", b"dex bytes")
+            raw = io.BytesIO()
+            manifest = {
+                "formatVersion": 3,
+                "name": "transform",
+                "version": "1",
+                "source": {
+                    "sha256": ["0" * 64],
+                    "requiredEntries": ["assets/TTPixel.swf", "assets/CABConfig.xml"],
+                    "swfEntry": "assets/TTPixel.swf",
+                },
+                "swf": {
+                    "operation": "local-transform-v1",
+                    "sourceSha256": "input",
+                    "resultSha256": "output",
+                },
+                "steps": [],
+            }
+            with zipfile.ZipFile(raw, "w") as archive:
+                archive.writestr("manifest.json", json.dumps(manifest))
+            encrypted = encrypt_bytes(source, raw.getvalue())
+            self.assertEqual(4, struct.unpack_from(">I", encrypted, 4)[0])
+            with zipfile.ZipFile(io.BytesIO(decrypt_bytes(source, encrypted))) as archive:
+                self.assertEqual(manifest, json.loads(archive.read("manifest.json")))
 
 
 if __name__ == "__main__":

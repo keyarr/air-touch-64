@@ -9,6 +9,7 @@ object SwfTransformations {
         "1558aa31a62f23171a19ddd2c2c3147eed89a9b6280401e28ca0fd7491675231",
         "d941eab1489b086fadeddfa921d0ffd031a69113b058e81482732c9641664f21",
     )
+    private const val supportedTransformInputHash = "d941eab1489b086fadeddfa921d0ffd031a69113b058e81482732c9641664f21"
     private val expectedCode = hex("d0 46 86 0a 00 66 81 1c  d0 46 86 0a 00 66 81 1c  66 ce 4c 93 66 a9 69")
     private val replacementCode = hex("60 aa 69 60 94 51 46 af 0a 01 29 20") + ByteArray(11) { 0x02 }
     private const val applicationClass = "com.adobe.ttpixel.app::TTApplication"
@@ -180,8 +181,12 @@ object SwfTransformations {
         abc.replaceMethodCode(method.methodIndex, updatedCode).serialize()
     }
 
-    fun patchStartupSyncBrushAndPaint(raw: ByteArray): ByteArray =
-        Swf.uncompressed(patchPaintTracking(patchPaintMethods(patchBrushHelper(patchStartupAndLocalSync(raw)))))
+    fun patchStartupSyncBrushAndPaint(raw: ByteArray): ByteArray {
+        require(sha256(raw) == supportedTransformInputHash) { "Unsupported SWF transformation input" }
+        return Swf.uncompressed(patchPaintTracking(
+            patchPaintMethods(patchBrushHelper(patchStartupAndLocalSync(raw))),
+        ))
+    }
 
     fun patchBrushHelper(raw: ByteArray): ByteArray = transformAbcBytes(raw) { abc ->
         val owner = "com.adobe.ttpixel.editor.tool::TTBrushTool"

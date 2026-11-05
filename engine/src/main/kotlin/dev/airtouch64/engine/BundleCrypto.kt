@@ -16,7 +16,7 @@ import javax.crypto.spec.PBEKeySpec
 
 object BundleCrypto {
     private const val MAGIC = "AT64"
-    private const val VERSION = 3
+    private const val VERSION = 4
     private const val MAX_HEADER = 1024 * 1024
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -45,7 +45,6 @@ object BundleCrypto {
             val length = input.readInt()
             require(length in 1..MAX_HEADER) { "Invalid bundle header length" }
             val header = ByteArray(length).also(input::readFully)
-            json.decodeFromString<BundleHeader>(header.decodeToString())
             val sourceHeader = json.decodeFromString<BundleHeader>(header.decodeToString())
             require(sourceHeader.formatVersion == format) { "Unsupported bundle header version" }
             val key = deriveKey(sourceApk, salt, sourceHeader.source.swfEntry)

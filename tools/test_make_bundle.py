@@ -1,21 +1,31 @@
 import json
+import hashlib
+import os
 import pathlib
 import subprocess
 import tempfile
 import unittest
 import zipfile
 
-from make_bundle import SOURCE_COPIES
+from make_bundle import SOURCE_COPIES, TRANSFORMED_SWF_SHA256, transform_swf
 from resource_transforms import apply
 
 
 class MakeBundleTest(unittest.TestCase):
-    def create_inputs(self, directory, unclassified=False):
+    @unittest.skipUnless(os.environ.get("AT64_SOURCE_SWF"), "local SWF fixture not supplied")
+    def test_jvm_runner_reconstructs_audited_fws(self):
+        source = pathlib.Path(os.environ["AT64_SOURCE_SWF"]).read_bytes()
+        self.assertEqual(TRANSFORMED_SWF_SHA256, hashlib.sha256(source).hexdigest())
+        output = transform_swf(source)
+        self.assertEqual(b"FWS", output[:3])
+        self.assertEqual("496c3e5009b94ebabecf57beb3f5a0dfade967b8ba6e626cadd2446d0bd538c5", hashlib.sha256(output).hexdigest())
+
+    def create_inputs(self, directory, unclassified=False, source_swf=None, final_swf=b"patched swf"):
         source_path = directory / "source.apk"
         base_path = directory / "base.apk"
         final_path = directory / "final.apk"
         source = {
-            "assets/TTPixel.swf": b"source swf",
+            "assets/TTPixel.swf": source_swf or b"source swf",
             "assets/CABConfig.xml": b"config",
             "classes.dex": b"source dex",
             "assets/resource/application/en/application.zstrings": (
@@ -33,7 +43,7 @@ class MakeBundleTest(unittest.TestCase):
         }
         final = dict(base)
         final["classes.dex"] = b"patched dex"
-        final["assets/TTPixel.swf"] = b"patched swf"
+        final["assets/TTPixel.swf"] = final_swf
         for name, data in source.items():
             if name.startswith("assets/resource/"):
                 final[name] = data
@@ -51,8 +61,8 @@ class MakeBundleTest(unittest.TestCase):
                     archive.writestr(name, data)
         return source_path, base_path, final_path
 
-    def run_generator(self, directory, unclassified=False):
-        source, base, final = self.create_inputs(directory, unclassified)
+    def run_generator(self, directory, unclassified=False, source_swf=None, final_swf=b"patched swf"):
+        source, base, final = self.create_inputs(directory, unclassified, source_swf, final_swf)
         output = directory / "bundle.zip"
         root = pathlib.Path(__file__).resolve().parent.parent
         result = subprocess.run(
@@ -81,6 +91,22 @@ class MakeBundleTest(unittest.TestCase):
             result, _ = self.run_generator(pathlib.Path(temp), unclassified=True)
             self.assertNotEqual(0, result.returncode)
             self.assertIn("unclassified resource difference", result.stderr)
+
+    @unittest.skipUnless(os.environ.get("AT64_SOURCE_SWF"), "local SWF fixture not supplied")
+    def test_new_manifest_uses_local_transform_without_swf_delta(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source_swf = pathlib.Path(os.environ["AT64_SOURCE_SWF"]).read_bytes()
+            final_swf = transform_swf(source_swf)
+            result, output = self.run_generator(
+                pathlib.Path(temp), source_swf=source_swf, final_swf=final_swf
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            with zipfile.ZipFile(output) as archive:
+                manifest = json.loads(archive.read("manifest.json"))
+                self.assertEqual(3, manifest["formatVersion"])
+                self.assertEqual("local-transform-v1", manifest["swf"]["operation"])
+                self.assertNotIn("patch", manifest["swf"])
+                self.assertNotIn("patches/swf.bdf", archive.namelist())
 
 
 if __name__ == "__main__":
