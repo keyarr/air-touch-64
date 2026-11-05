@@ -19,6 +19,15 @@ class AbcFileTest {
     }
 
     @Test
+    fun rewritesSelectedAbcSectionWhilePreservingOtherSections() {
+        val source = emptyAbc()
+        val rewritten = AbcFile.parse(source).rewriteSections(
+            listOf(AbcFile.SectionEdit(2, 0, byteArrayOf(0), byteArrayOf(1, 2))),
+        )
+        assertContentEquals(source.copyOfRange(0, 11) + byteArrayOf(1, 2) + source.copyOfRange(12, source.size), rewritten)
+    }
+
+    @Test
     fun rejectsTruncatedAbcAndUnsupportedMultinameKinds() {
         assertFailsWith<IllegalArgumentException> {
             AbcFile.parse(byteArrayOf(0x10, 0, 0x2E))
@@ -102,6 +111,23 @@ class AbcFileTest {
         assertEquals(before.size, after.size)
         assertEquals(-1, after.count { it == 0x46.toByte() } - before.count { it == 0x46.toByte() })
         assertEquals(1, after.count { it == 0x27.toByte() } - before.count { it == 0x27.toByte() })
+    }
+
+    @Test
+    fun appendsAndResolvesQNameInLocalSourcePool() {
+        val sourcePath = System.getenv("AT64_SOURCE_SWF")
+        assumeTrue(!sourcePath.isNullOrBlank())
+        val payload = Swf.tags(File(sourcePath!!).readBytes()).single { it.type == 82 }.payload
+        val start = (4 until payload.size).first { payload[it] == 0.toByte() } + 1
+        val original = AbcFile.parse(payload.copyOfRange(start, payload.size))
+        val owner = "com.adobe.ttpixel.editor.tool::TTBrushTool"
+        val className = original.classes.single { original.qualifiedName(it.nameIndex) == owner }.nameIndex
+        val namespace = original.namespaceIndex(className)!!
+        val (updated, index) = original.appendQName(namespace, "__at64PoolProbe")
+        assertEquals("${original.qualifiedName(className)?.substringBeforeLast("::")}::__at64PoolProbe", updated.qualifiedName(index))
+        val (again, sameIndex) = updated.appendQName(namespace, "__at64PoolProbe")
+        assertEquals(index, sameIndex)
+        assertContentEquals(updated.serialize(), again.serialize())
     }
 
     private fun emptyAbc(overlongFirstPoolCount: Boolean = false): ByteArray =

@@ -14,6 +14,18 @@ private fun encodeU30(value: Int, width: Int): ByteArray {
     return result
 }
 
+private fun encodeU30(value: Int): ByteArray {
+    require(value in 0..0x3FFFFFFF) { "Invalid U30 value" }
+    val bytes = ByteArrayOutputStream(5)
+    var remaining = value
+    while (remaining > 0x7F) {
+        bytes.write((remaining and 0x7F) or 0x80)
+        remaining = remaining ushr 7
+    }
+    bytes.write(remaining)
+    return bytes.toByteArray()
+}
+
 /** Lossless reader for the ABC structures used by the supported SWF. */
 class AbcFile private constructor(
     val minorVersion: Int,
@@ -27,6 +39,7 @@ class AbcFile private constructor(
     private val namespaceSets: List<List<Int>>,
     private val source: ByteArray,
     private val sections: List<Section>,
+    private val poolLayout: PoolLayout,
     private val strings: List<String>,
     private val namespaces: List<Namespace?>,
     private val multinames: List<Multiname?>,
@@ -51,6 +64,13 @@ class AbcFile private constructor(
     data class NamespaceInfo(val kind: Int, val name: String)
 
     data class BytePatch(val offset: Int, val expected: ByteArray, val replacement: ByteArray)
+
+    data class SectionEdit(
+        val sectionIndex: Int,
+        val offset: Int,
+        val expected: ByteArray,
+        val replacement: ByteArray,
+    )
 
     data class TraitRef(
         val owner: String,
@@ -139,6 +159,75 @@ class AbcFile private constructor(
         }
         require(offset == result.size) { "Unparsed ABC bytes" }
         return out.toByteArray()
+    }
+
+    fun rewriteSections(edits: List<SectionEdit>): ByteArray {
+        val grouped = edits.groupBy { it.sectionIndex }
+        require(grouped.keys.all { it in sections.indices }) { "Invalid ABC section index" }
+        val out = ByteArrayOutputStream(source.size + edits.sumOf { it.replacement.size - it.expected.size })
+        for ((sectionIndex, section) in sections.withIndex()) {
+            val sectionBytes = source.copyOfRange(section.start, section.end)
+            val sectionEdits = grouped[sectionIndex].orEmpty().sortedBy { it.offset }
+            var cursor = 0
+            for (edit in sectionEdits) {
+                require(edit.offset >= cursor && edit.offset <= sectionBytes.size - edit.expected.size) {
+                    "Overlapping or out-of-range ABC section edits"
+                }
+                require(sectionBytes.copyOfRange(edit.offset, edit.offset + edit.expected.size)
+                    .contentEquals(edit.expected)) { "ABC section edit precondition failed" }
+                out.write(sectionBytes, cursor, edit.offset - cursor)
+                out.write(edit.replacement)
+                cursor = edit.offset + edit.expected.size
+            }
+            out.write(sectionBytes, cursor, sectionBytes.size - cursor)
+        }
+        return out.toByteArray()
+    }
+
+    fun appendQName(namespaceIndex: Int, localName: String): Pair<AbcFile, Int> {
+        require(namespaceIndex in 1 until namespaces.size) { "Invalid ABC namespace index" }
+        val nameIndex = strings.indexOf(localName).takeIf { it > 0 } ?: strings.size
+        val existing = multinames.indices.firstOrNull { index ->
+            val name = multinames[index]
+            name != null && (name.kind == 0x07 || name.kind == 0x0D) &&
+                name.namespaceIndex == namespaceIndex && name.nameIndex == nameIndex
+        }
+        if (existing != null) return this to existing
+
+        val edits = mutableListOf<SectionEdit>()
+        val poolSection = sections[1]
+        if (nameIndex == strings.size) {
+            val entry = localName.toByteArray(Charsets.UTF_8)
+            val encodedEntry = encodeU30(entry.size) + entry
+            edits += SectionEdit(
+                1,
+                poolLayout.stringCountOffset - poolSection.start,
+                poolLayout.stringCountBytes,
+                encodeU30(strings.size + 1),
+            )
+            edits += SectionEdit(
+                1,
+                poolLayout.stringEnd - poolSection.start,
+                byteArrayOf(),
+                encodedEntry,
+            )
+        }
+
+        val multinameIndex = multinames.size
+        val qname = byteArrayOf(0x07) + encodeU30(namespaceIndex) + encodeU30(nameIndex)
+        edits += SectionEdit(
+            1,
+            poolLayout.multinameCountOffset - poolSection.start,
+            poolLayout.multinameCountBytes,
+            encodeU30(multinames.size + 1),
+        )
+        edits += SectionEdit(
+            1,
+            poolLayout.multinameEnd - poolSection.start,
+            byteArrayOf(),
+            qname,
+        )
+        return parse(rewriteSections(edits)) to multinameIndex
     }
 
     fun qualifiedName(index: Int): String? {
@@ -246,6 +335,14 @@ class AbcFile private constructor(
     fun methodBody(methodIndex: Int): MethodBody? = bodies.firstOrNull { it.methodIndex == methodIndex }
 
     private data class Section(val start: Int, val end: Int)
+    private data class PoolLayout(
+        val stringCountOffset: Int,
+        val stringCountBytes: ByteArray,
+        val stringEnd: Int,
+        val multinameCountOffset: Int,
+        val multinameCountBytes: ByteArray,
+        val multinameEnd: Int,
+    )
     private data class Namespace(val kind: Int, val name: String)
     private data class Multiname(
         val kind: Int,
@@ -272,6 +369,7 @@ class AbcFile private constructor(
             val namespaceEntries = reader.namespacePool(strings)
             val namespaceSets = reader.namespaceSetPool(namespaceEntries.size)
             val multinames = reader.multinamePool(namespaceEntries.size, namespaceSets.size)
+            val poolLayout = reader.poolLayout()
             sections += Section(poolStart, reader.position)
 
             val methodsStart = reader.position
@@ -329,6 +427,7 @@ class AbcFile private constructor(
                 namespaceSets,
                 bytes.copyOf(),
                 sections,
+                poolLayout,
                 strings,
                 namespaceEntries,
                 multinames,
@@ -347,6 +446,17 @@ class AbcFile private constructor(
     private class Reader(private val data: ByteArray) {
         var position: Int = 0
             private set
+        private var stringCountOffset = -1
+        private var stringCountBytes = byteArrayOf()
+        private var stringEnd = -1
+        private var multinameCountOffset = -1
+        private var multinameCountBytes = byteArrayOf()
+        private var multinameEnd = -1
+
+        fun poolLayout() = PoolLayout(
+            stringCountOffset, stringCountBytes, stringEnd,
+            multinameCountOffset, multinameCountBytes, multinameEnd,
+        )
 
         fun u8(): Int = take(1)[0].toInt() and 0xFF
 
@@ -405,7 +515,10 @@ class AbcFile private constructor(
         }
 
         fun stringPool(): List<String> {
+            stringCountOffset = position
+            val countStart = position
             val size = u30()
+            stringCountBytes = data.copyOfRange(countStart, position)
             val count = checkedCount((size - 1).coerceAtLeast(0))
             val result = ArrayList<String>(count + 1)
             result += ""
@@ -413,6 +526,7 @@ class AbcFile private constructor(
                 val length = u30()
                 result += String(take(length), Charsets.UTF_8)
             }
+            stringEnd = position
             return result
         }
 
@@ -446,7 +560,10 @@ class AbcFile private constructor(
         }
 
         fun multinamePool(namespaceCount: Int, namespaceSetCount: Int): List<Multiname?> {
+            multinameCountOffset = position
+            val countStart = position
             val size = u30()
+            multinameCountBytes = data.copyOfRange(countStart, position)
             val count = (size - 1).coerceAtLeast(0)
             checkedCount(count)
             val result = ArrayList<Multiname?>(count + 1)
@@ -485,6 +602,7 @@ class AbcFile private constructor(
                 }
                 result += value
             }
+            multinameEnd = position
             return result
         }
 
