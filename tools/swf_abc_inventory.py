@@ -416,6 +416,21 @@ def main():
             key for key in before_exceptions.keys() & after_exceptions.keys()
             if before_exceptions[key] != after_exceptions[key]
         )
+        changed_exception_details = [
+            {"selector": "::".join(map(str, key)),
+             "before": before_exceptions[key], "after": after_exceptions[key]}
+            for key in changed_exceptions
+        ]
+        changed_trait_details = []
+        for key in changed_traits:
+            before_trait, after_trait = before_traits[key], after_traits[key]
+            fields = ("attrs", "slot", "defaultValue", "metadata", "dispatch", "class", "function")
+            changed_trait_details.append({
+                "trait": json.loads(key),
+                "changes": {field: [before_trait.get(field), after_trait.get(field)]
+                            for field in fields
+                            if before_trait.get(field) != after_trait.get(field)},
+            })
         summary = {
             "before": {"poolCounts": result["poolCounts"], "methods": result["methodCount"],
                        "classes": result["classCount"], "scripts": result["scriptCount"],
@@ -435,9 +450,11 @@ def main():
             "addedMethodBodies": ["::".join(map(str, key)) for key in added],
             "removedMethodBodies": ["::".join(map(str, key)) for key in removed],
             "changedExceptionTables": ["::".join(map(str, key)) for key in changed_exceptions],
+            "changedExceptionTableDetails": changed_exception_details,
             "addedTraits": added_traits,
             "removedTraits": removed_traits,
             "changedTraits": changed_traits,
+            "changedTraitDetails": changed_trait_details,
             "addedMetadata": sorted(set(map(json.dumps, other["metadata"])) -
                                      set(map(json.dumps, result["metadata"]))),
             "removedMetadata": sorted(set(map(json.dumps, result["metadata"])) -
