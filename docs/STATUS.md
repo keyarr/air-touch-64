@@ -28,8 +28,8 @@ The signing key is stored in the app's private files and is removed when the app
 
 - `app/`: Compose UI, bundle and APK import, install handoff and on-device orchestration.
 - `engine/`: Kotlin patch engine shared by Android and the host runner. It reads and decrypts `.at64` bundles, validates inputs and patch outputs, writes aligned ZIP entries, signs and verifies the output.
-- `engine/src/main/kotlin/dev/airtouch64/engine/BundleCrypto.kt`: AT64 format 2 reader. The header is JSON and the payload is a ZIP encrypted with AES-GCM. The key comes from SHA-512 over the source APK's SWF, `assets/CABConfig.xml` and `classes.dex`, then PBKDF2-HMAC-SHA256 with 120,000 iterations and a 256-bit key.
-- `tools/make_bundle.py`: host-side bundle generator. It checks that the shell, source resources, overrides and binary deltas reproduce the final APK entry for entry. An `.at64` or `.enc` output is encrypted; a plain `.zip` output is not accepted by the app.
+- `engine/src/main/kotlin/dev/airtouch64/engine/BundleCrypto.kt`: reads AT64 formats 2 and 3; new bundles use outer format 3 and inner manifest version 2. The JSON header authenticates a ZIP payload encrypted with AES-GCM. The key comes from SHA-512 over the source APK's SWF, `assets/CABConfig.xml` and `classes.dex`, then PBKDF2-HMAC-SHA256 with 120,000 iterations and a 256-bit key.
+- `tools/make_bundle.py`: host-side bundle generator. It applies declared resource transformations and source copies in its self-check, and rejects unclassified resource changes. The only full resource override is project `about.txt`. An `.at64` or `.enc` output is encrypted; a plain `.zip` output is not accepted by the app.
 - No patch bundle is committed. The app only uses a bundle imported by the user.
 
 ## Build and run
@@ -67,12 +67,14 @@ The `--base`, `--final` and `--source` APKs are host build inputs and are not st
 
 ## Verified behavior
 
-Recorded from the last validation run, not rerun while updating this document:
+Recorded from the latest validation run:
 
-- Bundle self-check reproduced every non-signature entry of the host-built final APK from the source APK and bundle.
-- Host engine output matched all 345 non-signature APK entries, passed APK signature verification, and had 16 KiB native library alignment plus 4-byte stored-entry alignment.
-- The app compiled and packaged; the full patch pipeline, signing and verification passed on a Galaxy S24 Ultra running Android 16.
-- The patched app launched on that device and passed AIR's runtime integrity check without the modified-package warning.
+- Bundle self-check reproduced every non-signature entry of a 345-entry reference APK reconstructed from the known-good bundle and supported source APK.
+- Host engine output from the new format 3 bundle matched all 345 reference entries, passed APK signature verification and the connected Android instrumentation test on an API 35 x86_64 emulator.
+- All eight EGL shader rendering tests passed using shaders reconstructed from the source APK.
+- The patched APK launched on the API 35 emulator. The About screen showed the expected project text in English, Portuguese and Japanese, including the project-source and third-party notice labels.
+- `python3 -m unittest discover -s tools`, `:engine:test` and `:app:assembleDebug` passed.
+- A previous build's full patch pipeline, signing and verification passed on a Galaxy S24 Ultra running Android 16; that device check predates the resource transformation bundle.
 
 The bundle used for these checks is external to the repository.
 
