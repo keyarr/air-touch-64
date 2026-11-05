@@ -210,6 +210,25 @@ class AbcFileTest {
         assertFalse(newCode.contentEquals(oldCode))
     }
 
+    @Test
+    fun addsPaintColorTransformOverrideAndFinalizer() {
+        val sourcePath = System.getenv("AT64_SOURCE_SWF")
+        assumeTrue(!sourcePath.isNullOrBlank())
+        val output = SwfTransformations.patchPaintMethods(File(sourcePath!!).readBytes())
+        val payload = Swf.tags(output).single { it.type == 82 }.payload
+        val start = (4 until payload.size).first { payload[it] == 0.toByte() } + 1
+        val abc = AbcFile.parse(payload.copyOfRange(start, payload.size))
+        val owner = "com.adobe.ttpixel.editor.tool::TTPaintTool"
+        for (name in listOf("createPaintColorTransform", "getDrawingColorTransform", "finalizeWork")) {
+            assertEquals(1, abc.findMethods(owner, name).size)
+            assertEquals(1, abc.findTraits(owner, name, isStatic = false).size)
+        }
+        assertEquals(2, abc.findTraits(owner, "getDrawingColorTransform", false).single().trait.attributes)
+        assertEquals(2, abc.findTraits(owner, "finalizeWork", false).single().trait.attributes)
+        assertEquals("flash.geom::ColorTransform", abc.qualifiedName(abc.findMethods(owner, "createPaintColorTransform").single().let { abc.methods[it.methodIndex].returnType }))
+        assertEquals("void", abc.qualifiedName(abc.methods[abc.findMethods(owner, "finalizeWork").single().methodIndex].returnType))
+    }
+
     private fun emptyAbc(overlongFirstPoolCount: Boolean = false): ByteArray =
         ByteArrayOutputStream().also { out ->
             out.write(byteArrayOf(0x10, 0, 0x2E, 0))

@@ -23,6 +23,101 @@ object SwfTransformations {
 
     fun patchStartupSyncAndBrush(raw: ByteArray): ByteArray = patchBrushHelper(patchStartupAndLocalSync(raw))
 
+    fun patchPaintMethods(raw: ByteArray): ByteArray = transformAbcBytes(raw) { sourceAbc ->
+        val owner = "com.adobe.ttpixel.editor.tool::TTPaintTool"
+        val classInfo = sourceAbc.classes.single { sourceAbc.qualifiedName(it.nameIndex) == owner }
+        val scopeTemplate = sourceAbc.methodBody(
+            sourceAbc.findMethods(owner, "startPointTracking").single().methodIndex,
+        ) ?: throw IllegalArgumentException("TTPaintTool.startPointTracking has no body")
+        val packageNamespace = sourceAbc.namespaceIndex(classInfo.nameIndex)!!
+        var abc = sourceAbc
+        var (withPublicName, publicName) = abc.appendQName(packageNamespace, "getDrawingColorTransform")
+        abc = withPublicName
+        val publicString = abc.stringIndex("getDrawingColorTransform")!!
+        val colorTransformType = abc.multinameIndices("ColorTransform")
+            .single { abc.qualifiedName(it) == "flash.geom::ColorTransform" }
+        val numberType = abc.multinameIndices("Number").single { abc.qualifiedName(it) == "Number" }
+        val protectedNamespace = abc.namespaceIndices(
+            0x18,
+            "com.adobe.ttpixel.editor.tool:TTPaintTool",
+        ).single()
+        val (withCreateName, createName) = abc.appendQName(protectedNamespace, "createPaintColorTransform")
+        abc = withCreateName
+        val createString = abc.stringIndex("createPaintColorTransform")!!
+
+        val brushOwner = "com.adobe.ttpixel.editor.tool::TTBrushTool"
+        val brushField = abc.findTraits(brushOwner, "iBrush", false).single().trait.nameIndex
+        val eraseField = publicQName(abc, "doesErase")
+        val opacityProperty = publicQName(abc, "opacity")
+        val drawingColor = publicQName(abc, "getDrawingColor")
+        val colorTransformClass = abc.multinameIndices("ColorTransform").single {
+            abc.qualifiedName(it) == "flash.geom::ColorTransform"
+        }
+        val colorTransformProperty = publicQName(abc, "colorTransform")
+        val transformProperty = publicQName(abc, "transform")
+        val workingBitmapField = abc.findTraits(brushOwner, "iWorkingBitmap", false).single().trait.nameIndex
+        val penEraser = protectedQName(abc, "iPenEraser", "com.adobe.ttpixel.editor.tool:TTTool")
+        val voidType = publicQName(abc, "void")
+        val editorViewType = abc.multinameIndices("TTEditorView").single {
+            abc.qualifiedName(it) == "com.adobe.ttpixel.editor.app::TTEditorView"
+        }
+
+        val createMethodIndex = abc.methods.size
+        abc = abc.appendMethod(AbcFile.MethodInfo(
+            colorTransformType, listOf(numberType), createString, 0,
+        )).first
+        val createCode = CodeBuilder().apply {
+            op(0xD0); op(0x30)
+            op(0xD0); call(0x46, drawingColor, 0); op(0x73); op(0xD6)
+            operand(0x5D, colorTransformClass)
+            op(0x24, 0); op(0x24, 0); op(0x24, 0); op(0xD1)
+            op(0xD2); op(0x24, 16); op(0xA6); op(0x25); u30(255); op(0xA8)
+            op(0xD2); op(0x24, 8); op(0xA6); op(0x25); u30(255); op(0xA8)
+            op(0xD2); op(0x25); u30(255); op(0xA8); op(0x24, 0)
+            call(0x4A, colorTransformClass, 8); op(0x48)
+        }.build()
+        abc = abc.appendMethodBody(
+            createMethodIndex, 9, 3, scopeTemplate.initialScopeDepth, scopeTemplate.maxScopeDepth, createCode,
+        )
+        abc = abc.appendMethodTrait(owner, createName, createMethodIndex)
+
+        val drawingMethodIndex = abc.methods.size
+        abc = abc.appendMethod(AbcFile.MethodInfo(colorTransformType, emptyList(), publicString, 0)).first
+        val drawingCode = CodeBuilder().apply {
+            op(0xD0); op(0x30)
+            op(0xD0); operand(0x66, brushField); operand(0x66, eraseField)
+            branch(0x11, "erase")
+            operand(0x60, penEraser)
+            branch(0x12, "paint")
+            label("erase")
+            op(0xD0); call(0x45, publicName, 0); op(0x48)
+            label("paint")
+            op(0xD0); op(0xD0); operand(0x66, brushField); operand(0x66, opacityProperty)
+            call(0x46, createName, 1); op(0x48)
+        }.build()
+        abc = abc.appendMethodBody(
+            drawingMethodIndex, 2, 1, scopeTemplate.initialScopeDepth, scopeTemplate.maxScopeDepth, drawingCode,
+        )
+        abc = abc.appendMethodTrait(owner, publicName, drawingMethodIndex, isOverride = true)
+
+        val finalizeName = abc.multinameIndices("finalizeWork").single { abc.qualifiedName(it) == "finalizeWork" }
+        val finalizeString = abc.stringIndex("finalizeWork")!!
+        val finalizeMethodIndex = abc.methods.size
+        abc = abc.appendMethod(AbcFile.MethodInfo(voidType, listOf(editorViewType), finalizeString, 0)).first
+        val finalizeCode = CodeBuilder().apply {
+            op(0xD0); op(0x30)
+            op(0xD0); op(0xD1); call(0x4E, finalizeName, 1)
+            op(0xD0); operand(0x66, workingBitmapField); operand(0x66, transformProperty)
+            operand(0x5D, colorTransformClass); call(0x4A, colorTransformClass, 0)
+            operand(0x61, colorTransformProperty); op(0x47)
+        }.build()
+        abc = abc.appendMethodBody(
+            finalizeMethodIndex, 2, 2, scopeTemplate.initialScopeDepth, scopeTemplate.maxScopeDepth, finalizeCode,
+        )
+        abc = abc.appendMethodTrait(owner, finalizeName, finalizeMethodIndex, isOverride = true)
+        abc.serialize()
+    }
+
     fun patchBrushHelper(raw: ByteArray): ByteArray = transformAbcBytes(raw) { abc ->
         val owner = "com.adobe.ttpixel.editor.tool::TTBrushTool"
         val classInfo = abc.classes.single { abc.qualifiedName(it.nameIndex) == owner }
@@ -186,6 +281,17 @@ object SwfTransformations {
 
     private fun byteAt(bytes: ByteArray, index: Int): Int? = bytes.getOrNull(index)?.toInt()?.and(0xFF)
 
+    private fun publicQName(abc: AbcFile, localName: String): Int = abc.multinameIndices(localName).single { index ->
+        val namespaceIndex = abc.namespaceIndex(index) ?: return@single false
+        abc.namespaceInfo(namespaceIndex)?.let { it.kind == 0x16 && it.name.isEmpty() } == true
+    }
+
+    private fun protectedQName(abc: AbcFile, localName: String, owner: String): Int =
+        abc.multinameIndices(localName).single { index ->
+            val namespaceIndex = abc.namespaceIndex(index) ?: return@single false
+            abc.namespaceInfo(namespaceIndex)?.let { it.kind == 0x18 && it.name == owner } == true
+        }
+
     private fun encodeU30(value: Int): ByteArray {
         require(value in 0..0x3FFFFFFF)
         var remaining = value
@@ -211,4 +317,60 @@ object SwfTransformations {
     private fun hex(value: String): ByteArray = value.trim().split(Regex("\\s+")).map {
         it.toInt(16).toByte()
     }.toByteArray()
+
+    private class CodeBuilder {
+        private data class Branch(val operandOffset: Int, val label: String)
+
+        private val bytes = java.io.ByteArrayOutputStream()
+        private val labels = mutableMapOf<String, Int>()
+        private val branches = mutableListOf<Branch>()
+
+        fun op(vararg values: Int) {
+            values.forEach(bytes::write)
+        }
+
+        fun u30(value: Int) {
+            var remaining = value
+            require(remaining in 0..0x3FFFFFFF)
+            while (remaining > 0x7F) {
+                bytes.write((remaining and 0x7F) or 0x80)
+                remaining = remaining ushr 7
+            }
+            bytes.write(remaining)
+        }
+
+        fun operand(opcode: Int, value: Int) {
+            op(opcode)
+            u30(value)
+        }
+
+        fun call(opcode: Int, method: Int, argumentCount: Int) {
+            op(opcode)
+            u30(method)
+            u30(argumentCount)
+        }
+
+        fun branch(opcode: Int, label: String) {
+            op(opcode)
+            branches += Branch(bytes.size(), label)
+            op(0, 0, 0)
+        }
+
+        fun label(name: String) {
+            require(labels.put(name, bytes.size()) == null) { "Duplicate bytecode label" }
+        }
+
+        fun build(): ByteArray {
+            val result = bytes.toByteArray()
+            for ((offset, name) in branches) {
+                val target = labels[name] ?: throw IllegalArgumentException("Unknown bytecode label: $name")
+                val delta = target - (offset + 3)
+                require(delta in -0x800000..0x7FFFFF) { "AVM2 branch is out of range" }
+                result[offset] = delta.toByte()
+                result[offset + 1] = (delta ushr 8).toByte()
+                result[offset + 2] = (delta ushr 16).toByte()
+            }
+            return result
+        }
+    }
 }

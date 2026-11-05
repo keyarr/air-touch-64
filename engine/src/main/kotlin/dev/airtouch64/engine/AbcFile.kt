@@ -356,6 +356,10 @@ class AbcFile private constructor(
         return NamespaceInfo(namespace.kind, namespace.name)
     }
 
+    fun namespaceIndices(kind: Int, name: String): List<Int> = namespaces.indices.filter {
+        namespaces[it]?.let { namespace -> namespace.kind == kind && namespace.name == name } == true
+    }
+
     fun traitNamespaceIndex(owner: String, name: String, isStatic: Boolean): Int? {
         val trait = findTraits(owner, name, isStatic).singleOrNull()?.trait ?: return null
         return namespaceIndex(trait.nameIndex)
