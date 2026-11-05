@@ -3,6 +3,8 @@ package dev.airtouch64.engine
 import java.security.MessageDigest
 
 object SwfTransformations {
+    private data class CallRef(val start: Int, val end: Int, val name: Int, val argumentCount: Int)
+
     private val startupInputHashes = setOf(
         "1558aa31a62f23171a19ddd2c2c3147eed89a9b6280401e28ca0fd7491675231",
         "d941eab1489b086fadeddfa921d0ffd031a69113b058e81482732c9641664f21",
@@ -25,11 +27,11 @@ object SwfTransformations {
 
     fun patchPaintMethods(raw: ByteArray): ByteArray = transformAbcBytes(raw) { sourceAbc ->
         val owner = "com.adobe.ttpixel.editor.tool::TTPaintTool"
-        val classInfo = sourceAbc.classes.single { sourceAbc.qualifiedName(it.nameIndex) == owner }
+        sourceAbc.classes.single { sourceAbc.qualifiedName(it.nameIndex) == owner }
         val scopeTemplate = sourceAbc.methodBody(
             sourceAbc.findMethods(owner, "startPointTracking").single().methodIndex,
         ) ?: throw IllegalArgumentException("TTPaintTool.startPointTracking has no body")
-        val packageNamespace = sourceAbc.namespaceIndex(classInfo.nameIndex)!!
+        val packageNamespace = sourceAbc.namespaceIndices(0x16, "").single()
         var abc = sourceAbc
         var (withPublicName, publicName) = abc.appendQName(packageNamespace, "getDrawingColorTransform")
         abc = withPublicName
@@ -118,11 +120,73 @@ object SwfTransformations {
         abc.serialize()
     }
 
+    fun patchPaintTracking(raw: ByteArray): ByteArray = transformAbcBytes(raw) { abc ->
+        val owner = "com.adobe.ttpixel.editor.tool::TTPaintTool"
+        val method = abc.findMethods(owner, "startPointTracking").single()
+        val code = abc.methodCode(method.methodIndex)!!
+        val brushOwner = "com.adobe.ttpixel.editor.tool::TTBrushTool"
+        val brushField = abc.findTraits(brushOwner, "iBrush", false).single().trait.nameIndex
+        val bitmapField = abc.findTraits(brushOwner, "iWorkingBitmap", false).single().trait.nameIndex
+        val doesErase = publicQName(abc, "doesErase")
+        val opacity = publicQName(abc, "opacity")
+        val drawingColor = publicQName(abc, "getDrawingColor")
+        val drawingColorTransform = publicQName(abc, "getDrawingColorTransform")
+        val solidColorPatch = publicQName(abc, "getSolidColorPatch")
+        val transform = publicQName(abc, "transform")
+        val colorTransform = publicQName(abc, "colorTransform")
+        val superStartTracking = publicQName(abc, "startPointTracking")
+        val penEraser = protectedQName(abc, "iPenEraser", "com.adobe.ttpixel.editor.tool:TTTool")
+
+        val colorCall = findThisCall(code, drawingColor)
+        val colorPatchCall = readCall(code, colorCall.end, 0x4F)
+            ?: throw IllegalArgumentException("Missing getSolidColorPatch call")
+        require(colorPatchCall.name == solidColorPatch && colorPatchCall.argumentCount == 1) {
+            "Unexpected paint solid-color patch call"
+        }
+        val whiteBranch = CodeBuilder().apply {
+            op(0xD0); operand(0x66, brushField); operand(0x66, doesErase); op(0x2A)
+            branch(0x11, "color")
+            op(0x29); operand(0x60, penEraser)
+            label("color")
+            branch(0x12, "white")
+            op(0xD0); call(0x46, drawingColor, 0); branch(0x10, "end")
+            label("white")
+            op(0x25); u30(255); op(0x24, 16); op(0xA5)
+            op(0x25); u30(255); op(0x24, 8); op(0xA5); op(0xA0)
+            op(0x25); u30(255); op(0xA0)
+            label("end")
+        }.build()
+        val colorExpression = Avm2Code.Replacement(
+            colorCall.start, colorCall.end - colorCall.start, whiteBranch,
+        )
+
+        val superCall = findSuperStartTracking(code, superStartTracking)
+        val transformBranch = CodeBuilder().apply {
+            op(0xD0); operand(0x66, brushField); operand(0x66, doesErase); op(0x96); op(0x2A)
+            branch(0x12, "checkPenEraser")
+            op(0x29); operand(0x60, penEraser); op(0x96)
+            label("checkPenEraser")
+            branch(0x12, "end")
+            op(0xD0); operand(0x66, bitmapField); operand(0x66, transform)
+            op(0xD0); call(0x46, drawingColorTransform, 0)
+            operand(0x61, colorTransform)
+            label("end")
+        }.build()
+        val replacements = listOf(
+            colorExpression,
+            Avm2Code.Replacement(superCall, 0, transformBranch, branchTargetsAfter = true),
+        )
+        val updatedCode = Avm2Code.replace(code, replacements)
+        abc.replaceMethodCode(method.methodIndex, updatedCode).serialize()
+    }
+
+    fun patchStartupSyncBrushAndPaint(raw: ByteArray): ByteArray =
+        patchPaintTracking(patchPaintMethods(patchBrushHelper(patchStartupAndLocalSync(raw))))
+
     fun patchBrushHelper(raw: ByteArray): ByteArray = transformAbcBytes(raw) { abc ->
         val owner = "com.adobe.ttpixel.editor.tool::TTBrushTool"
-        val classInfo = abc.classes.single { abc.qualifiedName(it.nameIndex) == owner }
-        val packageNamespace = abc.namespaceIndex(classInfo.nameIndex)
-            ?: throw IllegalArgumentException("TTBrushTool is not a QName")
+        abc.classes.single { abc.qualifiedName(it.nameIndex) == owner }
+        val packageNamespace = abc.namespaceIndices(0x16, "").single()
         val (withQName, traitName) = abc.appendQName(packageNamespace, "getDrawingColorTransform")
         val methodName = withQName.stringIndex("getDrawingColorTransform")!!
         val returnType = withQName.multinameIndices("ColorTransform")
@@ -249,6 +313,38 @@ object SwfTransformations {
         }
         require(matches.size == 1) { "Expected one brush color-transform call, found ${matches.size}" }
         return matches.single()
+    }
+
+    private fun findThisCall(code: ByteArray, method: Int): CallRef {
+        val matches = code.indices.mapNotNull { start ->
+            if (byteAt(code, start) != 0xD0) return@mapNotNull null
+            val call = readCall(code, start + 1, 0x46) ?: return@mapNotNull null
+            call.takeIf { it.name == method && it.argumentCount == 0 }?.let {
+                CallRef(start, it.end, it.name, it.argumentCount)
+            }
+        }
+        require(matches.size == 1) { "Expected one getDrawingColor call, found ${matches.size}" }
+        return matches.single()
+    }
+
+    private fun readCall(code: ByteArray, offset: Int, opcode: Int): CallRef? {
+        if (byteAt(code, offset) != opcode) return null
+        val name = readU30(code, offset + 1) ?: return null
+        val argumentOffset = offset + 1 + name.second
+        val count = readU30(code, argumentOffset) ?: return null
+        return CallRef(offset, argumentOffset + count.second, name.first, count.first)
+    }
+
+    private fun findSuperStartTracking(code: ByteArray, name: Int): Int {
+        val matches = code.indices.filter { start ->
+            if (byteAt(code, start) != 0xD0 || byteAt(code, start + 1) != 0xD1 ||
+                byteAt(code, start + 2) != 0xD2 || byteAt(code, start + 3) != 0xD3) return@filter false
+            val call = readCall(code, start + 4, 0x4E) ?: return@filter false
+            call.name == name && call.argumentCount == 3
+        }
+        require(matches.size == 1) { "Expected one super.startPointTracking call, found ${matches.size}" }
+        val call = readCall(code, matches.single() + 4, 0x4E)!!
+        return call.end
     }
 
     private fun callLength(code: ByteArray, start: Int): Int {

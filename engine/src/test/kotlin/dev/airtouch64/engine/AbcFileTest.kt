@@ -7,6 +7,7 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import org.junit.jupiter.api.Assumptions.assumeTrue
 
 class AbcFileTest {
@@ -122,10 +123,10 @@ class AbcFileTest {
         val start = (4 until payload.size).first { payload[it] == 0.toByte() } + 1
         val original = AbcFile.parse(payload.copyOfRange(start, payload.size))
         val owner = "com.adobe.ttpixel.editor.tool::TTBrushTool"
-        val className = original.classes.single { original.qualifiedName(it.nameIndex) == owner }.nameIndex
-        val namespace = original.namespaceIndex(className)!!
+        original.classes.single { original.qualifiedName(it.nameIndex) == owner }
+        val namespace = original.namespaceIndices(0x16, "").single()
         val (updated, index) = original.appendQName(namespace, "__at64PoolProbe")
-        assertEquals("${original.qualifiedName(className)?.substringBeforeLast("::")}::__at64PoolProbe", updated.qualifiedName(index))
+        assertEquals("__at64PoolProbe", updated.qualifiedName(index))
         val (again, sameIndex) = updated.appendQName(namespace, "__at64PoolProbe")
         assertEquals(index, sameIndex)
         assertContentEquals(updated.serialize(), again.serialize())
@@ -163,8 +164,8 @@ class AbcFileTest {
         val start = (4 until payload.size).first { payload[it] == 0.toByte() } + 1
         var abc = AbcFile.parse(payload.copyOfRange(start, payload.size))
         val owner = "com.adobe.ttpixel.editor.tool::TTBrushTool"
-        val classInfo = abc.classes.single { abc.qualifiedName(it.nameIndex) == owner }
-        val packageNamespace = abc.namespaceIndex(classInfo.nameIndex)!!
+        abc.classes.single { abc.qualifiedName(it.nameIndex) == owner }
+        val packageNamespace = abc.namespaceIndices(0x16, "").single()
         val (withQName, traitName) = abc.appendQName(packageNamespace, "getDrawingColorTransform")
         abc = withQName
         val methodName = abc.stringIndex("getDrawingColorTransform")!!
@@ -229,6 +230,51 @@ class AbcFileTest {
         assertEquals(2, abc.findTraits(owner, "finalizeWork", false).single().trait.attributes)
         assertEquals("flash.geom::ColorTransform", abc.qualifiedName(abc.findMethods(owner, "createPaintColorTransform").single().let { abc.methods[it.methodIndex].returnType }))
         assertEquals("void", abc.qualifiedName(abc.methods[abc.findMethods(owner, "finalizeWork").single().methodIndex].returnType))
+    }
+
+    @Test
+    fun paintTrackingBodyUsesSupportedBranchRelocationOpcodes() {
+        val sourcePath = System.getenv("AT64_SOURCE_SWF")
+        assumeTrue(!sourcePath.isNullOrBlank())
+        val payload = Swf.tags(File(sourcePath!!).readBytes()).single { it.type == 82 }.payload
+        val start = (4 until payload.size).first { payload[it] == 0.toByte() } + 1
+        val abc = AbcFile.parse(payload.copyOfRange(start, payload.size))
+        val owner = "com.adobe.ttpixel.editor.tool::TTPaintTool"
+        val method = abc.findMethods(owner, "startPointTracking").single()
+        val body = abc.methodBody(method.methodIndex)!!
+        assertTrue(body.exceptions.isEmpty())
+        val code = abc.methodCode(method.methodIndex)!!
+        Avm2Code.insert(code, listOf(Avm2Code.Insertion(code.size, byteArrayOf(0x02))))
+    }
+
+    @Test
+    fun composesAuditedStartupSyncBrushAndPaintTransformations() {
+        val sourcePath = System.getenv("AT64_SOURCE_SWF")
+        assumeTrue(!sourcePath.isNullOrBlank())
+        val source = File(sourcePath!!).readBytes()
+        val output = SwfTransformations.patchStartupSyncBrushAndPaint(source)
+        assertContentEquals(output, SwfTransformations.patchStartupSyncBrushAndPaint(source))
+        val sourcePayload = Swf.tags(source).single { it.type == 82 }.payload
+        val outputPayload = Swf.tags(output).single { it.type == 82 }.payload
+        val sourceStart = (4 until sourcePayload.size).first { sourcePayload[it] == 0.toByte() } + 1
+        val outputStart = (4 until outputPayload.size).first { outputPayload[it] == 0.toByte() } + 1
+        val sourceAbc = AbcFile.parse(sourcePayload.copyOfRange(sourceStart, sourcePayload.size))
+        val outputAbc = AbcFile.parse(outputPayload.copyOfRange(outputStart, outputPayload.size))
+        val owner = "com.adobe.ttpixel.editor.tool::TTPaintTool"
+        val sourceMethod = sourceAbc.findMethods(owner, "startPointTracking").single()
+        val outputMethod = outputAbc.findMethods(owner, "startPointTracking").single()
+        assertTrue(outputAbc.methodCode(outputMethod.methodIndex)!!.size > sourceAbc.methodCode(sourceMethod.methodIndex)!!.size)
+        assertEquals(0, outputAbc.methodBody(outputMethod.methodIndex)!!.exceptions.size)
+        for (owner in listOf(
+            "com.adobe.ttpixel.editor.tool::TTBrushTool",
+            "com.adobe.ttpixel.editor.tool::TTPaintTool",
+        )) {
+            assertEquals(1, outputAbc.classes.count { outputAbc.qualifiedName(it.nameIndex) == owner })
+        }
+        val sourceOtherTags = Swf.tags(source).filter { it.type != 82 }
+        val outputOtherTags = Swf.tags(output).filter { it.type != 82 }
+        assertEquals(sourceOtherTags.size, outputOtherTags.size)
+        sourceOtherTags.indices.forEach { assertContentEquals(sourceOtherTags[it].payload, outputOtherTags[it].payload) }
     }
 
     private fun emptyAbc(overlongFirstPoolCount: Boolean = false): ByteArray =

@@ -2,14 +2,19 @@ package dev.airtouch64.engine
 
 /** AVM2 instruction layout and branch relocation for method-code insertions. */
 object Avm2Code {
-    data class Insertion(val offset: Int, val code: ByteArray)
-    data class Replacement(val offset: Int, val removedLength: Int, val code: ByteArray)
+    data class Insertion(val offset: Int, val code: ByteArray, val branchTargetsAfter: Boolean = false)
+    data class Replacement(
+        val offset: Int,
+        val removedLength: Int,
+        val code: ByteArray,
+        val branchTargetsAfter: Boolean = false,
+    )
 
     private data class Branch(val operandOffset: Int, val target: Int, val base: Int)
     private data class Instruction(val offset: Int, val end: Int, val branches: List<Branch>)
 
     fun insert(code: ByteArray, insertions: List<Insertion>): ByteArray {
-        return replace(code, insertions.map { Replacement(it.offset, 0, it.code) })
+        return replace(code, insertions.map { Replacement(it.offset, 0, it.code, it.branchTargetsAfter) })
     }
 
     fun replace(code: ByteArray, replacements: List<Replacement>): ByteArray {
@@ -31,8 +36,12 @@ object Avm2Code {
             for (replacement in sorted) {
                 val end = replacement.offset + replacement.removedLength
                 if (replacement.removedLength == 0) {
-                    if (offset > replacement.offset) result += replacement.code.size
+                    if (offset > replacement.offset || (offset == replacement.offset && replacement.branchTargetsAfter)) {
+                        result += replacement.code.size
+                    }
                 } else if (offset >= end) {
+                    result += replacement.code.size - replacement.removedLength
+                } else if (offset == replacement.offset && replacement.branchTargetsAfter) {
                     result += replacement.code.size - replacement.removedLength
                 } else if (offset > replacement.offset) {
                     throw IllegalArgumentException("AVM2 branch target is inside replaced code")
@@ -131,7 +140,7 @@ object Avm2Code {
             }
             0x01, 0x02, 0x03, 0x07, 0x09, 0x1C, 0x1D, 0x1E, 0x1F, 0x20, 0x21, 0x23,
             0x26, 0x27, 0x28, 0x29, 0x2A, 0x2B,
-            0x47, 0x48, 0x50, 0x51, 0x52, 0x57, 0x64, 0x69, 0x6B,
+            0x30, 0x47, 0x48, 0x50, 0x51, 0x52, 0x57, 0x64, 0x69, 0x6B,
             0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78,
             0x82, 0x83, 0x84, 0x85, 0x87, 0x88, 0x89, 0x90, 0x91, 0x93, 0x95,
             0x96, 0x97, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8,
