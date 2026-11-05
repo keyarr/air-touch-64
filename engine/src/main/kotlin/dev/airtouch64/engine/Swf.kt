@@ -4,7 +4,7 @@ import java.io.ByteArrayOutputStream
 import java.util.zip.Deflater
 import java.util.zip.Inflater
 
-/** SWF container helpers. Only the compressed flag and the 32-bit length field are touched. */
+/** SWF container helpers for local DoABC replacement. */
 object Swf {
     data class Tag(val type: Int, val payload: ByteArray)
 
