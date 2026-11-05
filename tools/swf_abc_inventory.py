@@ -172,21 +172,35 @@ def parse_abc(data):
     if r.pos != len(data):
         raise ValueError(f"{len(data) - r.pos} unparsed ABC bytes")
 
+    def namespace(index):
+        if index == 0:
+            return "*"
+        kind, name = namespaces[index]
+        return f"{kind}:{strings[name] if name else ''}"
+
     def multiname(index):
         if index == 0:
             return "*"
         value = multinames[index]
         kind = value[0]
         if kind in (0x07, 0x0D):
-            ns_kind, ns_name = namespaces[value[1]]
-            ns = strings[ns_name] if ns_name else ""
+            ns = namespace(value[1])
             local = strings[value[2]] if value[2] else "*"
-            return f"{ns_kind}:{ns}::{local}" if ns else f"{ns_kind}:{local}"
+            return f"{ns}::{local}"
+        if kind in (0x0F, 0x10):
+            return f"RTQName({strings[value[1]] if value[1] else '*'})"
+        if kind in (0x11, 0x12):
+            return "RTQName(*)"
         if kind in (0x09, 0x0E):
-            return f"{multiname(value[1])}[*]"
+            members = ",".join(namespace(index) for index in ns_sets[value[2]])
+            return f"Multiname({strings[value[1]] if value[1] else '*'};{members})"
         if kind in (0x1B, 0x1C):
-            return "*"
-        return strings[value[1]] if value[1] else "*"
+            members = ",".join(namespace(index) for index in ns_sets[value[1]])
+            return f"MultinameL({members})"
+        if kind == 0x1D:
+            params = ",".join(multiname(index) for index in value[2])
+            return f"{multiname(value[1])}.<{params}>"
+        return "*"
 
     method_names = [strings[m["name"]] if m["name"] else "" for m in methods]
     body_by_method = {body["method"]: body for body in bodies}
@@ -195,10 +209,12 @@ def parse_abc(data):
         output = []
         for item in items:
             entry = {"owner": owner, "name": multiname(item["name"]), "kind": item["kind"]}
+            entry["attrs"] = item["attrs"]
             if "method" in item:
                 idx = item["method"]
                 entry["method"] = idx
                 entry["methodName"] = method_names[idx]
+                entry["methodFlags"] = methods[idx]["flags"]
                 entry["signature"] = {
                     "return": multiname(methods[idx]["return"]),
                     "params": [multiname(param) for param in methods[idx]["params"]],
@@ -206,24 +222,105 @@ def parse_abc(data):
                 entry["body"] = body_by_method.get(idx)
             if "type" in item:
                 entry["type"] = multiname(item["type"])
+            if "dispatch" in item:
+                entry["dispatch"] = item["dispatch"]
+            if "slot" in item:
+                entry["slot"] = item["slot"]
+            if "class" in item:
+                entry["class"] = item["class"]
+            if "function" in item:
+                entry["function"] = item["function"]
+            if "value" in item:
+                entry["value"] = item["value"]
+                entry["valueKind"] = item.get("valueKind")
+                if item["value"]:
+                    value_kind = item["valueKind"]
+                    index = item["value"]
+                    if value_kind == 0x03:
+                        value = ints[index]
+                        entry["defaultValue"] = value if value < 0x80000000 else value - 0x100000000
+                    elif value_kind == 0x04:
+                        entry["defaultValue"] = uints[index]
+                    elif value_kind == 0x06:
+                        value = struct.unpack("<d", bytes.fromhex(doubles[index]))[0]
+                        entry["defaultValue"] = "NaN" if value != value else value
+                    elif value_kind == 0x01:
+                        entry["defaultValue"] = strings[index]
+                    elif value_kind == 0x0A:
+                        entry["defaultValue"] = False
+                    elif value_kind == 0x0B:
+                        entry["defaultValue"] = True
+                    elif value_kind == 0x0C:
+                        entry["defaultValue"] = None
+                    elif value_kind == 0x00:
+                        entry["defaultValue"] = "undefined"
+                    else:
+                        entry["defaultValue"] = f"constant-kind-{value_kind}:{index}"
+                else:
+                    entry["defaultValue"] = "implicit"
+            if "metadata" in item:
+                entry["metadata"] = item["metadata"]
             output.append(entry)
         return output
 
     symbols = []
     for index, instance in enumerate(instances):
         owner = multiname(instance["name"])
+        symbols.append({"owner": owner, "name": "#instance_init", "kind": "init",
+                        "method": instance["init"], "signature": {
+                            "return": "void", "params": []},
+                        "body": body_by_method.get(instance["init"])})
         symbols += format_traits(instance["traits"], owner)
+        symbols.append({"owner": owner, "name": "#static_init", "kind": "init",
+                        "method": classes[index]["init"], "signature": {
+                            "return": "void", "params": []},
+                        "body": body_by_method.get(classes[index]["init"])})
         symbols += format_traits(classes[index]["traits"], owner + "#static")
     for index, script in enumerate(scripts):
+        symbols.append({"owner": f"script[{index}]", "name": "#init", "kind": "init",
+                        "method": script["init"], "signature": {
+                            "return": "void", "params": []},
+                        "body": body_by_method.get(script["init"])})
         symbols += format_traits(script["traits"], f"script[{index}]")
+    metadata_symbols = [
+        {"name": strings[name], "items": [
+            [strings[key] if key else "", strings[value] if value else ""]
+            for key, value in items
+        ]}
+        for name, items in metadata
+    ]
+    namespaces_resolved = [namespace(index) for index in range(1, len(namespaces))]
+    namespace_sets_resolved = [
+        [namespace(index) for index in members] for members in ns_sets[1:]
+    ]
+    multinames_resolved = [multiname(index) for index in range(1, len(multinames))]
+    trait_count = sum(len(item["traits"]) for item in instances)
+    trait_count += sum(len(item["traits"]) for item in classes)
+    trait_count += sum(len(item["traits"]) for item in scripts)
+    body_trait_count = sum(len(item["traits"]) for item in bodies)
+    exception_count = sum(len(body["exceptions"]) for body in bodies)
+
+    def pool_hash(values):
+        encoded = json.dumps(values, ensure_ascii=False, separators=(",", ":")).encode()
+        return hashlib.sha256(encoded).hexdigest()
 
     return {"version": [minor, major], "poolCounts": {
         "ints": len(ints) - 1, "uints": len(uints) - 1, "doubles": len(doubles) - 1,
         "strings": len(strings) - 1, "namespaces": len(namespaces) - 1,
         "namespaceSets": len(ns_sets) - 1, "multinames": len(multinames) - 1,
+    }, "poolHashes": {
+        "strings": pool_hash(strings[1:]),
+        "namespaces": pool_hash(namespaces_resolved),
+        "namespaceSets": pool_hash(namespace_sets_resolved),
+        "multinames": pool_hash(multinames_resolved),
+    }, "namespaceKindCounts": {
+        str(kind): sum(1 for item in namespaces[1:] if item[0] == kind)
+        for kind in sorted({item[0] for item in namespaces[1:]})
     }, "methodCount": len(methods), "classCount": len(instances),
-        "scriptCount": len(scripts), "bodyCount": len(bodies), "symbols": symbols,
-        "bodies": bodies}
+        "scriptCount": len(scripts), "bodyCount": len(bodies), "traitCount": trait_count,
+        "bodyTraitCount": body_trait_count,
+        "metadataCount": len(metadata_symbols), "exceptionCount": exception_count,
+        "metadata": metadata_symbols, "symbols": symbols, "bodies": bodies}
 
 
 def swf_abc(raw):
@@ -286,16 +383,65 @@ def main():
         changed = sorted(key for key in before.keys() & after.keys() if before[key] != after[key])
         added = sorted(after.keys() - before.keys())
         removed = sorted(before.keys() - after.keys())
+
+        def trait_key(symbol):
+            identity = {key: symbol[key] for key in ("owner", "name", "kind", "signature", "type")
+                        if key in symbol}
+            return json.dumps(identity, sort_keys=True)
+
+        def traits(inventory):
+            return {trait_key(symbol): symbol for symbol in inventory["symbols"]}
+
+        before_traits, after_traits = traits(result), traits(other)
+        added_traits = sorted(after_traits.keys() - before_traits.keys())
+        removed_traits = sorted(before_traits.keys() - after_traits.keys())
+        changed_traits = sorted(
+            key for key in before_traits.keys() & after_traits.keys()
+            if any(before_traits[key].get(field) != after_traits[key].get(field)
+                   for field in ("attrs", "slot", "defaultValue", "metadata", "dispatch", "class", "function"))
+        )
+
+        def exception_tables(inventory):
+            return {
+                (symbol["owner"], symbol["name"], symbol["kind"],
+                 json.dumps(symbol.get("signature", {}), sort_keys=True)):
+                symbol["body"]["exceptions"]
+                for symbol in inventory["symbols"]
+                if symbol.get("body") is not None and symbol["body"]["exceptions"]
+            }
+
+        before_exceptions = exception_tables(result)
+        after_exceptions = exception_tables(other)
+        changed_exceptions = sorted(
+            key for key in before_exceptions.keys() & after_exceptions.keys()
+            if before_exceptions[key] != after_exceptions[key]
+        )
         summary = {
             "before": {"poolCounts": result["poolCounts"], "methods": result["methodCount"],
                        "classes": result["classCount"], "scripts": result["scriptCount"],
-                       "bodies": result["bodyCount"]},
+                       "bodies": result["bodyCount"], "traits": result["traitCount"],
+                       "bodyTraits": result["bodyTraitCount"],
+                       "metadata": result["metadataCount"], "exceptions": result["exceptionCount"],
+                       "poolHashes": result["poolHashes"],
+                       "namespaceKindCounts": result["namespaceKindCounts"]},
             "after": {"poolCounts": other["poolCounts"], "methods": other["methodCount"],
                       "classes": other["classCount"], "scripts": other["scriptCount"],
-                      "bodies": other["bodyCount"]},
+                      "bodies": other["bodyCount"], "traits": other["traitCount"],
+                      "bodyTraits": other["bodyTraitCount"],
+                      "metadata": other["metadataCount"], "exceptions": other["exceptionCount"],
+                      "poolHashes": other["poolHashes"],
+                      "namespaceKindCounts": other["namespaceKindCounts"]},
             "changedMethodBodies": ["::".join(map(str, key)) for key in changed],
             "addedMethodBodies": ["::".join(map(str, key)) for key in added],
             "removedMethodBodies": ["::".join(map(str, key)) for key in removed],
+            "changedExceptionTables": ["::".join(map(str, key)) for key in changed_exceptions],
+            "addedTraits": added_traits,
+            "removedTraits": removed_traits,
+            "changedTraits": changed_traits,
+            "addedMetadata": sorted(set(map(json.dumps, other["metadata"])) -
+                                     set(map(json.dumps, result["metadata"]))),
+            "removedMetadata": sorted(set(map(json.dumps, result["metadata"])) -
+                                       set(map(json.dumps, other["metadata"]))),
         }
         text = json.dumps(summary, indent=2, sort_keys=True) + "\n"
     else:
