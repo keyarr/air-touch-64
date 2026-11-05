@@ -143,25 +143,16 @@ class PatchEngine(private val workspace: File) {
             for (transform in manifest.resourceTransforms) {
                 val input = resources[transform.entry]
                     ?: error("Resource transformation source missing: ${transform.entry}")
-                check(sha256(input) == transform.inputSha256) {
-                    "Resource transformation input hash mismatch: ${transform.entry}"
-                }
-                val result = ResourceTransformations.apply(transform.entry, transform.operation, input)
-                check(sha256(result) == transform.outputSha256) {
-                    "Resource transformation output hash mismatch: ${transform.entry}"
-                }
+                val result = ResourceTransformations.applyVerified(
+                    transform.entry,
+                    transform.operation,
+                    input,
+                    transform.inputSha256,
+                    transform.outputSha256,
+                )
                 resources[transform.entry] = result
             }
-            val sourceCopies = manifest.sourceCopies.associate { copy ->
-                val bytes = readEntry(source, copy.sourceEntry)
-                check(sha256(bytes) == copy.sha256) {
-                    "Arquivo de origem inesperado: ${copy.sourceEntry}"
-                }
-                copy.entry to bytes
-            }
-            check(sourceCopies.size == manifest.sourceCopies.size) {
-                "Destino duplicado em cópias da origem"
-            }
+            val sourceCopies = readSourceCopies(source, manifest.sourceCopies)
             onEvent(PatchEvent.Message("Recursos: ${resources.size} arquivos"))
             done("resources")
 
@@ -303,6 +294,18 @@ class PatchEngine(private val workspace: File) {
             val entry = zip.getEntry(name) ?: error("Entrada ausente no APK: $name")
             zip.getInputStream(entry).use { it.readBytes() }
         }
+
+    internal fun readSourceCopies(source: File, copies: List<SourceCopy>): Map<String, ByteArray> {
+        val result = copies.associate { copy ->
+            val bytes = readEntry(source, copy.sourceEntry)
+            check(sha256(bytes) == copy.sha256) {
+                "Arquivo de origem inesperado: ${copy.sourceEntry}"
+            }
+            copy.entry to bytes
+        }
+        check(result.size == copies.size) { "Destino duplicado em cópias da origem" }
+        return result
+    }
 
     private fun readBundle(entries: Map<String, ByteArray>, path: String): ByteArray =
         entries[path] ?: error("Entrada ausente no bundle: $path")

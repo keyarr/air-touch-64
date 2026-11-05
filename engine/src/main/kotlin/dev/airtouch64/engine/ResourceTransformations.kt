@@ -3,6 +3,19 @@ package dev.airtouch64.engine
 import java.nio.charset.StandardCharsets
 
 internal object ResourceTransformations {
+    fun applyVerified(
+        entry: String,
+        operation: String,
+        input: ByteArray,
+        inputSha256: String,
+        outputSha256: String,
+    ): ByteArray {
+        check(PatchEngine.sha256(input) == inputSha256) { "Resource transformation input hash mismatch: $entry" }
+        val output = apply(entry, operation, input)
+        check(PatchEngine.sha256(output) == outputSha256) { "Resource transformation output hash mismatch: $entry" }
+        return output
+    }
+
     fun apply(entry: String, operation: String, input: ByteArray): ByteArray {
         require(operation == "resource-v1") { "Unsupported resource operation: $operation" }
         val locale = Regex("assets/resource/application/(de|en|es|fr|it|ja|pt|ru)/application\\.zstrings").matchEntire(entry)?.groupValues?.get(1)
