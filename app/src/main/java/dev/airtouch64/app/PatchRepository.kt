@@ -16,28 +16,14 @@ class PatchRepository(private val context: Context) {
     private val engine = PatchEngine(File(context.cacheDir, "engine"))
     private val bundleFile = File(context.filesDir, "bundle/bundle.at64")
 
-    fun loadSavedBundle(): BundleSelection? {
-        if (!bundleFile.isFile) return null
-        return runCatching { BundleSelection(bundleFile, savedName(), engine.readHeader(bundleFile)) }
-            .getOrElse { bundleFile.delete(); null }
+    fun loadSavedBundle(): BundleSelection {
+        if (!bundleFile.isFile) {
+            bundleFile.parentFile!!.mkdirs()
+            context.assets.open("bundle.at64").use { input -> bundleFile.outputStream().use(input::copyTo) }
+        }
+        val header = engine.readHeader(bundleFile)
+        return BundleSelection(bundleFile, header.name, header)
     }
-
-    fun importBundle(uri: Uri, name: String): BundleSelection {
-        val dir = bundleFile.parentFile!!.apply { mkdirs() }
-        val temp = File(dir, "bundle.at64.tmp")
-        try {
-            context.contentResolver.openInputStream(uri)?.use { input -> temp.outputStream().use(input::copyTo) }
-                ?: error(context.getString(R.string.open_apk_failed))
-            val header = engine.readHeader(temp)
-            bundleFile.delete()
-            check(temp.renameTo(bundleFile)) { "Could not save bundle" }
-            File(dir, "bundle.name").writeText(name)
-            return BundleSelection(bundleFile, name, header)
-        } finally { temp.delete() }
-    }
-
-    private fun savedName(): String = File(bundleFile.parentFile, "bundle.name").takeIf { it.isFile }?.readText()
-        ?: bundleFile.name
 
     fun displayName(uri: Uri): String {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {

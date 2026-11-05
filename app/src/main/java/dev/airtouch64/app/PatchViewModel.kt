@@ -24,7 +24,6 @@ sealed interface UiState {
     data class Home(
         val bundle: BundleSelection? = null,
         val source: SourceSelection? = null,
-        val importingBundle: Boolean = false,
         val importingSource: Boolean = false,
         val error: String? = null,
     ) : UiState
@@ -40,25 +39,6 @@ class PatchViewModel(application: Application) : AndroidViewModel(application) {
 
     init { reset() }
 
-    fun importBundle(uri: Uri) {
-        val home = state as? UiState.Home ?: return
-        state = home.copy(importingBundle = true, error = null)
-        viewModelScope.launch {
-            val result = runCatching { withContext(Dispatchers.IO) {
-                val name = repository.displayName(uri)
-                val bundle = repository.importBundle(uri, name)
-                val source = home.source?.let { old ->
-                    old.copy(inspection = repository.inspect(old.file, bundle.header))
-                }
-                bundle to source
-            } }
-            state = result.fold(
-                { (bundle, source) -> home.copy(bundle = bundle, source = source, importingBundle = false) },
-                { error -> home.copy(importingBundle = false, error = error.message ?: getApplication<Application>().getString(R.string.import_failed)) },
-            )
-        }
-    }
-
     fun importSource(uri: Uri) {
         val home = state as? UiState.Home ?: return
         state = home.copy(importingSource = true, error = null)
@@ -66,14 +46,14 @@ class PatchViewModel(application: Application) : AndroidViewModel(application) {
             val result = runCatching { withContext(Dispatchers.IO) {
                 val name = repository.displayName(uri)
                 val file = repository.importSource(uri, name)
-                val inspection = home.bundle?.let { repository.inspect(file, it.header) }
+                val bundle = home.bundle ?: error("Embedded bundle is unavailable")
+                val inspection = repository.inspect(file, bundle.header)
                 file to (name to inspection)
             } }
             state = result.fold(
                 { (file, details) ->
                     val (name, inspection) = details
-                    if (inspection == null) home.copy(importingSource = false, error = getApplication<Application>().getString(R.string.import_bundle_first))
-                    else home.copy(source = SourceSelection(file, name, inspection), importingSource = false)
+                    home.copy(source = SourceSelection(file, name, inspection), importingSource = false)
                 },
                 { error -> home.copy(importingSource = false, error = error.message ?: getApplication<Application>().getString(R.string.import_failed)) },
             )
@@ -115,8 +95,8 @@ class PatchViewModel(application: Application) : AndroidViewModel(application) {
     fun reset() {
         state = UiState.Loading
         viewModelScope.launch {
-            val saved = withContext(Dispatchers.IO) { repository.loadSavedBundle() }
-            state = UiState.Home(bundle = saved)
+            val bundle = withContext(Dispatchers.IO) { repository.loadSavedBundle() }
+            state = UiState.Home(bundle = bundle)
         }
     }
 }

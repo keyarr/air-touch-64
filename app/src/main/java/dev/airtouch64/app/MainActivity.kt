@@ -120,7 +120,7 @@ private fun ManagerApp(
                 UiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
-                is UiState.Home -> HomeScreen(current, viewModel::importBundle, viewModel::importSource, viewModel::start)
+                is UiState.Home -> HomeScreen(current, viewModel::importSource, viewModel::start)
                 is UiState.Running -> RunningScreen(current)
                 is UiState.Done -> DoneScreen(current.result, onInstall, onSave, viewModel::reset)
                 is UiState.Failed -> FailedScreen(current, viewModel::reset)
@@ -145,42 +145,14 @@ private fun ContentColumn(
 }
 
 @Composable
-private fun HomeScreen(state: UiState.Home, onBundle: (Uri) -> Unit, onPick: (Uri) -> Unit, onStart: () -> Unit) {
+private fun HomeScreen(state: UiState.Home, onPick: (Uri) -> Unit, onStart: () -> Unit) {
     val sourcePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) onPick(uri)
-    }
-    val bundlePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) onBundle(uri)
     }
     var showApkHelp by remember { mutableStateOf(false) }
     ContentColumn {
         AppHeader()
         val bundle = state.bundle
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
-            Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(stringResource(R.string.patch_bundle), style = MaterialTheme.typography.titleMedium)
-                    if (bundle == null) {
-                        OutlinedButton(onClick = { bundlePicker.launch(arrayOf("*/*")) }, enabled = !state.importingBundle) {
-                            Text(stringResource(R.string.choose_bundle))
-                        }
-                    } else {
-                        TextButton(onClick = { bundlePicker.launch(arrayOf("*/*")) }, enabled = !state.importingBundle) {
-                            Text(stringResource(R.string.change_bundle))
-                        }
-                    }
-                }
-                if (bundle != null) {
-                    Text(bundle.name, style = MaterialTheme.typography.bodyLarge)
-                    Text(stringResource(R.string.bundle_details, bundle.header.name, bundle.header.version, bundle.file.length() / 1024 / 1024), style = MaterialTheme.typography.bodySmall)
-                }
-                if (state.importingBundle) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-            }
-        }
         val source = state.source
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
             Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -193,7 +165,7 @@ private fun HomeScreen(state: UiState.Home, onBundle: (Uri) -> Unit, onPick: (Ur
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = { sourcePicker.launch(arrayOf("*/*")) },
-                        enabled = !state.importingSource && bundle != null,
+                        enabled = !state.importingSource,
                         modifier = Modifier.weight(1f),
                     ) {
                         Text(stringResource(if (source == null) R.string.choose_apk else R.string.change_apk), maxLines = 1)
@@ -264,7 +236,7 @@ private fun HomeScreen(state: UiState.Home, onBundle: (Uri) -> Unit, onPick: (Ur
         )
         Button(
             onClick = onStart,
-            enabled = bundle != null && source?.inspection?.supported == true && !state.importingBundle && !state.importingSource,
+            enabled = source?.inspection?.supported == true && !state.importingSource,
             modifier = Modifier.fillMaxWidth().height(56.dp),
         ) { Text(stringResource(R.string.apply_patches)) }
     }
