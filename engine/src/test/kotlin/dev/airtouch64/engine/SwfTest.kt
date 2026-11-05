@@ -36,6 +36,15 @@ class SwfTest {
     }
 
     @Test
+    fun convertsCwsToFwsWithExactBodyAndLength() {
+        val body = movieBody(listOf(1 to byteArrayOf(1, 2, 3), 82 to doAbc(70)))
+        val converted = Swf.uncompressed(Swf.compress(19, body))
+        assertEquals("FWS", String(converted, 0, 3, Charsets.US_ASCII))
+        assertContentEquals(body, Swf.body(converted))
+        assertEquals(body.size + 8, converted.size)
+    }
+
+    @Test
     fun rejectsMissingDuplicateAndTruncatedDoAbcTags() {
         val noAbc = swf(movieBody(listOf(1 to byteArrayOf(1))), false)
         assertFailsWith<IllegalArgumentException> {

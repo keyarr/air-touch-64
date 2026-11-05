@@ -181,7 +181,7 @@ object SwfTransformations {
     }
 
     fun patchStartupSyncBrushAndPaint(raw: ByteArray): ByteArray =
-        patchPaintTracking(patchPaintMethods(patchBrushHelper(patchStartupAndLocalSync(raw))))
+        Swf.uncompressed(patchPaintTracking(patchPaintMethods(patchBrushHelper(patchStartupAndLocalSync(raw)))))
 
     fun patchBrushHelper(raw: ByteArray): ByteArray = transformAbcBytes(raw) { abc ->
         val owner = "com.adobe.ttpixel.editor.tool::TTBrushTool"

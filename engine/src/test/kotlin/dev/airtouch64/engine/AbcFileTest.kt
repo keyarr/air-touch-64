@@ -254,6 +254,8 @@ class AbcFileTest {
         val source = File(sourcePath!!).readBytes()
         val output = SwfTransformations.patchStartupSyncBrushAndPaint(source)
         assertContentEquals(output, SwfTransformations.patchStartupSyncBrushAndPaint(source))
+        assertEquals("FWS", String(output, 0, 3, Charsets.US_ASCII))
+        assertEquals(Swf.body(output).size + 8, output.size)
         val sourcePayload = Swf.tags(source).single { it.type == 82 }.payload
         val outputPayload = Swf.tags(output).single { it.type == 82 }.payload
         val sourceStart = (4 until sourcePayload.size).first { sourcePayload[it] == 0.toByte() } + 1

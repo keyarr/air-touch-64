@@ -49,6 +49,16 @@ object Swf {
         return out.toByteArray()
     }
 
+    fun uncompressed(raw: ByteArray): ByteArray {
+        val body = body(raw)
+        val out = ByteArrayOutputStream(body.size + 8)
+        out.write("FWS".toByteArray(Charsets.US_ASCII))
+        out.write(version(raw).toInt())
+        writeInt32(out, body.size + 8)
+        out.write(body)
+        return out.toByteArray()
+    }
+
     fun tags(raw: ByteArray): List<Tag> {
         val body = body(raw)
         return tagSpans(body).map { span ->
