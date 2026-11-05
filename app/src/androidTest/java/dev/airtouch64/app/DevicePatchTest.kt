@@ -11,6 +11,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.util.zip.ZipFile
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
@@ -22,7 +23,7 @@ class DevicePatchTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val repo = PatchRepository(context)
 
-        // 1. Use the bundle imported by the user
+        // 1. Use the embedded audited bundle
         val bundle = requireNotNull(repo.loadSavedBundle()) { "Import a bundle before running this test" }
         assertEquals("PS Touch Revived ARM64", bundle.header.name)
 
@@ -67,6 +68,12 @@ class DevicePatchTest {
 
         assertTrue("Output APK must exist", result.output.isFile)
         assertEquals(353, result.entries)
+        ZipFile(result.output).use { apk ->
+            val swfHash = apk.getInputStream(apk.getEntry("assets/TTPixel.swf")).use { input ->
+                dev.airtouch64.engine.PatchEngine.sha256(input.readBytes())
+            }
+            assertEquals("496c3e5009b94ebabecf57beb3f5a0dfade967b8ba6e626cadd2446d0bd538c5", swfHash)
+        }
 
         // 5. Verify signature on device
         val certs = ApkSigning.verify(result.output)

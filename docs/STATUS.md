@@ -2,7 +2,7 @@
 
 ## Product
 
-Air Touch 64 is an Android patcher for Photoshop Touch. The user imports a patch bundle, selects the original APK, and the app produces the PS Touch Revived ARM64 APK. Neither the original Adobe APK nor the patch bundle is stored in this repository.
+Air Touch 64 is an Android patcher for Photoshop Touch. It embeds `app/src/main/assets/bundle.at64`, selects the original APK, and produces the PS Touch Revived ARM64 APK. The original Adobe APK is not stored in this repository.
 
 The app supports Android 8.0 (API 26) and newer, and has Portuguese and English strings. It accepts only the source APK whose SHA-256 is listed in the bundle manifest:
 
@@ -14,13 +14,13 @@ This is the Photoshop Touch 1.3.7 variant used to create the current bundle. Oth
 
 ## App flow
 
-1. The user imports an `.at64` bundle through Android's document picker. The app validates the AT64 header, copies the bundle to `filesDir/bundle/bundle.at64`, and stores the display name separately.
+1. The app loads the embedded `.at64` bundle into `filesDir/bundle/bundle.at64` and validates its AT64 header.
 2. The user picks the source APK. The app copies it to cache and checks its SHA-256 and required entries against the bundle header.
-3. The engine decrypts the bundle using key material derived from the source APK, applies the SWF, DEX and resource patches, then assembles the AIR ARM64 shell and native libraries.
+3. The engine decrypts the bundle using key material derived from the source APK, applies the local SWF transformation, DEX and resource patches, then assembles the AIR ARM64 shell and native libraries.
 4. The APK is aligned, signed with a persistent per-install key, and verified on device.
 5. The user opens the Android package installer or saves the APK through the system document picker.
 
-The bundle is imported manually and is not downloaded automatically. Distribution is external; see `README.md`. Importing another bundle re-inspects the selected source APK. Patching runs in the ViewModel, not a foreground service; keep Air Touch 64 open while patching.
+Patching runs in the ViewModel, not a foreground service; keep Air Touch 64 open while patching.
 
 The signing key is stored in the app's private files and is removed when the app is uninstalled. APKs produced by different installations have different signing certificates and cannot update one another in place. The generated APK uses a different key from Adobe's original APK, so it installs as a separate app. The source Android package installer may require the user to allow installs from Air Touch 64.
 
@@ -28,9 +28,9 @@ The signing key is stored in the app's private files and is removed when the app
 
 - `app/`: Compose UI, bundle and APK import, install handoff and on-device orchestration.
 - `engine/`: Kotlin patch engine shared by Android and the host runner. It reads and decrypts `.at64` bundles, validates inputs and patch outputs, writes aligned ZIP entries, signs and verifies the output.
-- `engine/src/main/kotlin/dev/airtouch64/engine/BundleCrypto.kt`: reads AT64 formats 2 and 3; new bundles use outer format 3 and inner manifest version 2. The JSON header authenticates a ZIP payload encrypted with AES-GCM. The key comes from SHA-512 over the source APK's SWF, `assets/CABConfig.xml` and `classes.dex`, then PBKDF2-HMAC-SHA256 with 120,000 iterations and a 256-bit key.
-- `tools/make_bundle.py`: host-side bundle generator. It applies declared resource transformations and source copies in its self-check, and rejects unclassified resource changes. The only full resource override is project `about.txt`. An `.at64` or `.enc` output is encrypted; a plain `.zip` output is not accepted by the app.
-- No patch bundle is committed. The app only uses a bundle imported by the user.
+- `engine/src/main/kotlin/dev/airtouch64/engine/BundleCrypto.kt`: reads AT64 formats 2 through 4. The embedded bundle uses outer format 4 and inner manifest version 3. The authenticated JSON header accompanies a ZIP payload encrypted with AES-GCM.
+- `tools/make_bundle.py`: host-side generator. Release runs require `--require-local-swf`; experimental SWF deltas need the explicit `--allow-swf-delta` flag. Generation verifies the audited transform hashes and reconstructs every final APK entry before writing. `.at64` output is encrypted.
+- `app/src/main/assets/bundle.at64`: embedded app bundle. Root `bundle.at64` is an ignored generated distribution copy.
 
 ## Build and run
 
@@ -48,7 +48,7 @@ Run the host patcher with a supported source APK and an `.at64` bundle:
 JAVA_HOME=/usr/lib/jvm/java-21-openjdk ./gradlew :engine:run --args="SOURCE.apk BUNDLE.at64 build/out.apk build/test-keys"
 ```
 
-Run the Android instrumentation test. It expects the same supported source APK at `/data/local/tmp/pstouch-source.apk` and a bundle named `PS Touch Revived ARM64` imported in the app:
+Run the Android instrumentation test. It uses the embedded bundle and expects the supported source APK at `/data/local/tmp/pstouch-source.apk`:
 
 ```sh
 adb push SOURCE.apk /data/local/tmp/pstouch-source.apk
@@ -60,24 +60,28 @@ The release build reads signing values from an untracked `keystore.properties` f
 To regenerate the bundle, build the AIR shell and final APK on a host with AIR SDK, FFDec, NDK and `bsdiff4` available, then run:
 
 ```sh
-python3 tools/make_bundle.py --base BASE.apk --final FINAL.apk --source SOURCE.apk --output BUNDLE.at64
+python3 tools/make_bundle.py --base BASE.apk --final FINAL.apk --source SOURCE.apk --output BUNDLE.at64 --require-local-swf
 ```
 
-The `--base`, `--final` and `--source` APKs are host build inputs and are not stored in this repository. The generated bundle is also external; import it in the app instead of committing it.
+The `--base`, `--final` and `--source` APKs are host build inputs and are not stored in this repository.
 
 ## Verified behavior
 
 Recorded from the latest validation run:
 
-- Bundle self-check reproduced every non-signature entry of a 345-entry reference APK reconstructed from the known-good bundle and supported source APK.
-- Host engine output from the new format 3 bundle matched all 345 reference entries, passed APK signature verification and the connected Android instrumentation test on an API 35 x86_64 emulator.
+- The audited SWF changes are `TTApplication.applicationWillRun` startup handling, `TTSyncEngine.initialize` local sync selection, and brush color/opacity handling in `TTBrushTool` and `TTPaintTool`. The reference comparison found no camera or splash changes for this supported source. ABC serialization differences do not imply a behavior difference; the transform is gated by its complete output hash and the method-level selectors.
+- Startup keeps the Stage reference on the expected namespace and replaces the startup expression in place. Sync forces `TTExtensionWrapper.instance.isAvailable()` false so SyncFile stays local. Painting accumulates opaque white coverage, then applies the brush color and opacity when finalizing; eraser and pen-eraser branches remain intact. Camera permission and app-splash edits belong to other source variants, and the Android insets fix is a DEX change.
+
+- `--require-local-swf` regenerated the bundle from the supported source APK, approved ARM64 base and final APK. Reconstruction matched all 353 non-signature entries.
+- The embedded bundle uses manifest version 3 (`local-transform-v1`) and outer AT64 version 4. Its 82-entry payload has no `patches/swf.bdf` or main `assets/TTPixel.swf`; shell and extension SWFs remain.
+- Host patching and the API 35 device test both verified the output SWF SHA-256 `496c3e5009b94ebabecf57beb3f5a0dfade967b8ba6e626cadd2446d0bd538c5`. The device test passed signature verification and the 353-entry check.
 - All eight EGL shader rendering tests passed using shaders reconstructed from the source APK.
 - All four transformed shaders compiled and drew through GLES 2 on the API 35 emulator using the generated APK. Comic, Posterize Color and Threshold also previewed on a transparent canvas in the app; Replace Color is categorized as `generic` and is not exposed in the filter menu.
 - The patched APK launched on the API 35 emulator. The About screen showed the expected project text in English, Portuguese and Japanese, including the project-source and third-party notice labels.
 - `python3 -m unittest discover -s tools`, `:engine:test` and `:app:assembleDebug` passed.
 - A previous build's full patch pipeline, signing and verification passed on a Galaxy S24 Ultra running Android 16; that device check predates the resource transformation bundle.
 
-The bundle used for these checks is external to the repository.
+The current embedded bundle is `app/src/main/assets/bundle.at64`.
 
 ## Canvas touch offset with system navigation
 

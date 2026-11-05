@@ -308,6 +308,7 @@ class AbcFileTest {
         val source = File(sourcePath!!).readBytes()
         val output = SwfTransformations.patchStartupSyncBrushAndPaint(source)
         assertContentEquals(output, SwfTransformations.patchStartupSyncBrushAndPaint(source))
+        assertEquals("496c3e5009b94ebabecf57beb3f5a0dfade967b8ba6e626cadd2446d0bd538c5", PatchEngine.sha256(output))
         assertEquals("FWS", String(output, 0, 3, Charsets.US_ASCII))
         assertEquals(Swf.body(output).size + 8, output.size)
         val sourcePayload = Swf.tags(source).single { it.type == 82 }.payload
@@ -316,6 +317,12 @@ class AbcFileTest {
         val outputStart = (4 until outputPayload.size).first { outputPayload[it] == 0.toByte() } + 1
         val sourceAbc = AbcFile.parse(sourcePayload.copyOfRange(sourceStart, sourcePayload.size))
         val outputAbc = AbcFile.parse(outputPayload.copyOfRange(outputStart, outputPayload.size))
+        assertEquals(1, outputAbc.findMethods("com.adobe.ttpixel.app::TTApplication", "applicationWillRun").size)
+        assertEquals(1, outputAbc.findMethods("com.adobe.ttpixel.media.creativecloud::TTSyncEngine", "initialize").size)
+        assertEquals(1, outputAbc.findMethods("com.adobe.ttpixel.editor.tool::TTBrushTool", "getDrawingColorTransform").size)
+        for (method in listOf("createPaintColorTransform", "getDrawingColorTransform", "finalizeWork")) {
+            assertEquals(1, outputAbc.findMethods("com.adobe.ttpixel.editor.tool::TTPaintTool", method).size)
+        }
         val owner = "com.adobe.ttpixel.editor.tool::TTPaintTool"
         val sourceMethod = sourceAbc.findMethods(owner, "startPointTracking").single()
         val outputMethod = outputAbc.findMethods(owner, "startPointTracking").single()

@@ -27,7 +27,8 @@ from resource_transforms import apply as transform_resource
 SWF_ENTRY = "assets/TTPixel.swf"
 RESOURCE_PREFIX = "assets/resource/"
 SIGNATURE_NAMES = {"META-INF/MANIFEST.MF"}
-TRANSFORMED_SWF_SHA256 = "d941eab1489b086fadeddfa921d0ffd031a69113b058e81482732c9641664f21"
+SUPPORTED_SWF_INPUT_SHA256 = "d941eab1489b086fadeddfa921d0ffd031a69113b058e81482732c9641664f21"
+TRANSFORMED_SWF_SHA256 = "496c3e5009b94ebabecf57beb3f5a0dfade967b8ba6e626cadd2446d0bd538c5"
 ADDED_RESOURCE_ENTRIES = {
     "assets/resource/application/uifonts/zh-TW/font.zstrings",
     "assets/resource/application/uifonts/zh/font.zstrings",
@@ -95,6 +96,17 @@ def main() -> None:
     parser.add_argument("--final", type=pathlib.Path, required=True)
     parser.add_argument("--source", type=pathlib.Path, required=True)
     parser.add_argument("--output", type=pathlib.Path, required=True)
+    swf_mode = parser.add_mutually_exclusive_group()
+    swf_mode.add_argument(
+        "--require-local-swf",
+        action="store_true",
+        help="require the audited SWF input and local transform; reject SWF deltas",
+    )
+    swf_mode.add_argument(
+        "--allow-swf-delta",
+        action="store_true",
+        help="allow a SWF delta for an experimental unsupported variant",
+    )
     parser.add_argument("--name", default="PS Touch Revived ARM64")
     parser.add_argument("--version", default="1.0.0")
     args = parser.parse_args()
@@ -112,9 +124,19 @@ def main() -> None:
 
     source_swf = source[SWF_ENTRY]
     final_swf = final[SWF_ENTRY]
-    local_swf = sha256(source_swf) == TRANSFORMED_SWF_SHA256
+    source_swf_hash = sha256(source_swf)
+    if args.require_local_swf and source_swf_hash != SUPPORTED_SWF_INPUT_SHA256:
+        raise SystemExit(f"unsupported SWF input hash: {source_swf_hash}")
+    local_swf = source_swf_hash == SUPPORTED_SWF_INPUT_SHA256
+    if not local_swf and not args.allow_swf_delta:
+        raise SystemExit(
+            f"unsupported SWF input hash: {source_swf_hash}; "
+            "pass --allow-swf-delta only for experimental bundles"
+        )
     if local_swf:
         transformed_swf = transform_swf(source_swf)
+        if sha256(transformed_swf) != TRANSFORMED_SWF_SHA256:
+            raise SystemExit("local SWF transformation produced an unexpected hash")
         if transformed_swf != final_swf:
             raise SystemExit(
                 "final APK SWF does not match local transformation: "
@@ -122,6 +144,8 @@ def main() -> None:
             )
         swf_patch = None
     else:
+        if args.require_local_swf:
+            raise SystemExit("local SWF transformation is required")
         transformed_swf = None
         swf_patch = bsdiff4.diff(source_swf, final_swf)
 
@@ -239,7 +263,7 @@ def main() -> None:
         rebuilt[override["entry"]] = final[override["entry"]]
     if local_swf:
         check_swf = transform_swf(source_swf)
-        if check_swf != transformed_swf:
+        if sha256(check_swf) != TRANSFORMED_SWF_SHA256 or check_swf != transformed_swf:
             raise SystemExit("SWF transformation is not deterministic")
         rebuilt[SWF_ENTRY] = check_swf
     else:
