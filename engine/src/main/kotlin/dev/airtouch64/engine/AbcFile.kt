@@ -155,6 +155,10 @@ class AbcFile private constructor(
         }
     }
 
+    fun multinameIndices(name: String): List<Int> = multinames.indices.filter {
+        it != 0 && localName(it) == name
+    }
+
     private fun localName(index: Int): String? {
         if (index == 0) return null
         val name = multinames.getOrNull(index) ?: return null

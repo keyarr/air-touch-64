@@ -16,9 +16,27 @@ object SwfTransformations {
         require(hash in startupInputHashes) { "Unexpected startup SWF SHA-256: $hash" }
         require(String(raw, 0, 3, Charsets.US_ASCII) == "CWS") { "Expected compressed CWS input" }
 
-        val doAbc = Swf.tags(raw).single { it.type == 82 }.payload
-        val abcStart = abcStart(doAbc)
-        val abc = AbcFile.parse(doAbc.copyOfRange(abcStart, doAbc.size))
+        return patchStartupAbc(raw)
+    }
+
+    fun patchStartupAndLocalSync(raw: ByteArray): ByteArray = patchLocalSync(patchStartup(raw))
+
+    fun patchLocalSync(raw: ByteArray): ByteArray = transformAbc(raw) { abc ->
+        val owner = "com.adobe.ttpixel.media.creativecloud::TTSyncEngine"
+        val method = abc.findMethods(owner, "initialize").single()
+        val code = abc.methodCode(method.methodIndex) ?: error("initialize has no method body")
+        val wrapper = abc.multinameIndices("TTExtensionWrapper").single { abc.qualifiedName(it) == "com.adobe.ttpixel.editor.processor::TTExtensionWrapper" }
+        val instance = abc.multinameIndices("instance").toSet()
+        val available = abc.multinameIndices("isAvailable").toSet()
+        val useNative = abc.multinameIndices("useNativeExtensions").toSet()
+        val start = findSequence(code, wrapper, instance, available, useNative)
+        val expressionEnd = start + expressionLength(code, start)
+        val expected = code.copyOfRange(start, expressionEnd)
+        val replacement = byteArrayOf(0x27) + ByteArray(expected.size - 1) { 0x02 }
+        listOf(abc.methodCodePatch(method.methodIndex, start, expected, replacement))
+    }
+
+    private fun patchStartupAbc(raw: ByteArray): ByteArray = transformAbc(raw) { abc ->
         val method = abc.findMethods(applicationClass, "applicationWillRun").single()
         require(method.methodIndex == 1901) { "Unexpected applicationWillRun method index" }
 
@@ -36,10 +54,66 @@ object SwfTransformations {
             abc.methodCodePatch(method.methodIndex, 96, expectedCode, replacementCode),
             abc.namespaceIndexPatch(stageTrait.nameIndex, 1),
         )
-        val replacementAbc = abc.serialize(patches)
-        val replacementDoAbc = doAbc.copyOfRange(0, abcStart) + replacementAbc
+        patches
+    }
+
+    private fun transformAbc(raw: ByteArray, patches: (AbcFile) -> List<AbcFile.BytePatch>): ByteArray {
+        val doAbc = Swf.tags(raw).single { it.type == 82 }.payload
+        val start = abcStart(doAbc)
+        val abc = AbcFile.parse(doAbc.copyOfRange(start, doAbc.size))
+        val replacementDoAbc = doAbc.copyOfRange(0, start) + abc.serialize(patches(abc))
         return Swf.replaceDoAbc(raw, replacementDoAbc)
     }
+
+    private fun findSequence(
+        code: ByteArray,
+        wrapper: Int,
+        instance: Set<Int>,
+        available: Set<Int>,
+        useNative: Set<Int>,
+    ): Int {
+        val matches = code.indices.filter { start ->
+            val first = readU30(code, start + 1)
+            if (code[start].toInt() and 0xFF != 0x60 || first?.first != wrapper) return@filter false
+            var cursor = start + 1 + first.second
+            if (byteAt(code, cursor++) != 0x66) return@filter false
+            val second = readU30(code, cursor) ?: return@filter false
+            if (second.first !in instance) return@filter false
+            cursor += second.second
+            if (byteAt(code, cursor++) != 0x46) return@filter false
+            val third = readU30(code, cursor) ?: return@filter false
+            if (third.first !in available) return@filter false
+            cursor += third.second
+            if (readU30(code, cursor)?.first != 0) return@filter false
+            cursor += 1
+            if (byteAt(code, cursor++) != 0x61) return@filter false
+            readU30(code, cursor)?.first in useNative
+        }
+        require(matches.size == 1) { "Expected one native sync assignment, found ${matches.size}" }
+        return matches.single()
+    }
+
+    private fun expressionLength(code: ByteArray, start: Int): Int {
+        var cursor = start + 1 + requireNotNull(readU30(code, start + 1)).second
+        cursor += 1 + requireNotNull(readU30(code, cursor + 1)).second
+        cursor += 1 + requireNotNull(readU30(code, cursor + 1)).second
+        return cursor + requireNotNull(readU30(code, cursor)).second - start
+    }
+
+    private fun readU30(bytes: ByteArray, offset: Int): Pair<Int, Int>? {
+        if (offset !in bytes.indices) return null
+        var value = 0
+        for (index in 0..4) {
+            val position = offset + index
+            if (position !in bytes.indices) return null
+            val byte = bytes[position].toInt() and 0xFF
+            value = value or ((byte and 0x7F) shl (index * 7))
+            if (byte < 0x80) return value.takeIf { it <= 0x3FFFFFFF }?.let { it to index + 1 }
+        }
+        return null
+    }
+
+    private fun byteAt(bytes: ByteArray, index: Int): Int? = bytes.getOrNull(index)?.toInt()?.and(0xFF)
 
     private fun abcStart(payload: ByteArray): Int {
         require(payload.size >= 5) { "Invalid DoABC payload" }

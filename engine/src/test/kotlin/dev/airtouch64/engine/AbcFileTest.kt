@@ -72,6 +72,38 @@ class AbcFileTest {
         assertContentEquals(Swf.body(expected), Swf.body(actual))
     }
 
+    @Test
+    fun appliesStartupAndLocalSyncEditsToSourceFixture() {
+        val sourcePath = System.getenv("AT64_SOURCE_SWF")
+        assumeTrue(!sourcePath.isNullOrBlank())
+        val source = File(sourcePath!!).readBytes()
+        val output = SwfTransformations.patchStartupAndLocalSync(source)
+        val sourceTags = Swf.tags(source)
+        val outputTags = Swf.tags(output)
+        assertEquals(sourceTags.map { it.type }, outputTags.map { it.type })
+        val untouchedSource = sourceTags.filter { it.type != 82 }
+        val untouchedOutput = outputTags.filter { it.type != 82 }
+        assertEquals(untouchedSource.size, untouchedOutput.size)
+        for (index in untouchedSource.indices) {
+            assertContentEquals(untouchedSource[index].payload, untouchedOutput[index].payload)
+        }
+
+        fun body(swf: ByteArray, owner: String, name: String): ByteArray {
+            val payload = Swf.tags(swf).single { it.type == 82 }.payload
+            val start = (4 until payload.size).first { payload[it] == 0.toByte() } + 1
+            val abc = AbcFile.parse(payload.copyOfRange(start, payload.size))
+            val method = abc.findMethods(owner, name).single()
+            return abc.methodCode(method.methodIndex)!!
+        }
+
+        val owner = "com.adobe.ttpixel.media.creativecloud::TTSyncEngine"
+        val before = body(source, owner, "initialize")
+        val after = body(output, owner, "initialize")
+        assertEquals(before.size, after.size)
+        assertEquals(-1, after.count { it == 0x46.toByte() } - before.count { it == 0x46.toByte() })
+        assertEquals(1, after.count { it == 0x27.toByte() } - before.count { it == 0x27.toByte() })
+    }
+
     private fun emptyAbc(overlongFirstPoolCount: Boolean = false): ByteArray =
         ByteArrayOutputStream().also { out ->
             out.write(byteArrayOf(0x10, 0, 0x2E, 0))
