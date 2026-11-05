@@ -1,5 +1,8 @@
 package dev.airtouch64.app
 
+import android.os.Debug
+import android.os.SystemClock
+import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.airtouch64.engine.ApkSigning
@@ -8,6 +11,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 @RunWith(AndroidJUnit4::class)
 class DevicePatchTest {
@@ -42,9 +47,23 @@ class DevicePatchTest {
 
         // 4. Run patching on device
         val events = mutableListOf<String>()
-        val result = repo.patch(localSource, bundle.file, identity) { event ->
-            events += event.toString()
+        val sampling = AtomicBoolean(true)
+        val peakPssKb = AtomicLong(Debug.getPss())
+        val sampler = Thread {
+            while (sampling.get()) {
+                peakPssKb.updateAndGet { maxOf(it, Debug.getPss()) }
+                Thread.sleep(50)
+            }
         }
+        sampler.start()
+        val startedAt = SystemClock.elapsedRealtime()
+        val result = try {
+            repo.patch(localSource, bundle.file, identity) { event -> events += event.toString() }
+        } finally {
+            sampling.set(false)
+            sampler.join()
+        }
+        Log.i("DevicePatchTest", "patch_ms=${SystemClock.elapsedRealtime() - startedAt} peak_pss_kb=${peakPssKb.get()}")
 
         assertTrue("Output APK must exist", result.output.isFile)
         assertEquals(353, result.entries)
