@@ -47,6 +47,11 @@ SOURCE_COPIES = [
     ("res/raw/rgba8888", "res/b8"),
     ("res/raw/rgba8888", "res/iv"),
 ]
+SOURCE_COPY_ENTRIES = {entry for _, entry in SOURCE_COPIES}
+
+
+def is_apk_metadata(name: str) -> bool:
+    return name in {"AndroidManifest.xml", "resources.arsc"} or name.startswith("res/")
 
 
 def sha256(data: bytes) -> str:
@@ -205,9 +210,12 @@ def main() -> None:
     for name, data in base.items():
         if is_signature(name):
             continue
-        if name == SWF_ENTRY or name.startswith(RESOURCE_PREFIX) or name in {entry for _, entry in SOURCE_COPIES}:
+        if name == SWF_ENTRY or name.startswith(RESOURCE_PREFIX) or name in SOURCE_COPY_ENTRIES or is_apk_metadata(name):
             continue
         shell[name] = data
+    for name, data in final.items():
+        if is_apk_metadata(name) and name not in SOURCE_COPY_ENTRIES:
+            shell[name] = data
 
     manifest = {
         "formatVersion": 3 if local_swf else 2,
@@ -251,7 +259,14 @@ def main() -> None:
 
     # Self check: shell + source resources + overrides + deltas + patched SWF + libs must
     # reproduce the final APK entry for entry.
-    rebuilt = {name: data for name, data in base.items() if not is_signature(name)}
+    rebuilt = {
+        name: data for name, data in base.items()
+        if not is_signature(name) and not is_apk_metadata(name)
+    }
+    rebuilt.update({
+        name: data for name, data in final.items()
+        if is_apk_metadata(name) and name not in SOURCE_COPY_ENTRIES
+    })
     for name, data in source.items():
         if name.startswith(RESOURCE_PREFIX):
             rebuilt[name] = data

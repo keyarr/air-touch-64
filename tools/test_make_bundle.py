@@ -39,10 +39,16 @@ class MakeBundleTest(unittest.TestCase):
             "classes.dex": b"base dex",
             "assets/TTPixel.swf": b"source swf",
             "assets/CABConfig.xml": b"base config",
+            "AndroidManifest.xml": b"old manifest",
+            "resources.arsc": b"old resources",
+            "res/icon.png": b"old icon",
             "shell.bin": b"shell",
         }
         final = dict(base)
         final["classes.dex"] = b"patched dex"
+        final["AndroidManifest.xml"] = b"PS Touch manifest"
+        final["resources.arsc"] = b"PS Touch resources"
+        final["res/icon.png"] = b"PS Touch icon"
         final["assets/TTPixel.swf"] = final_swf
         for name, data in source.items():
             if name.startswith("assets/resource/"):
@@ -90,6 +96,9 @@ class MakeBundleTest(unittest.TestCase):
                 self.assertFalse(any(path.startswith("overrides/assets/resource/") and
                                      not path.endswith("about.txt") for path in payload))
                 self.assertEqual(10, len(manifest["sourceCopies"]))
+                self.assertEqual(b"PS Touch manifest", archive.read("shell/AndroidManifest.xml"))
+                self.assertEqual(b"PS Touch resources", archive.read("shell/resources.arsc"))
+                self.assertEqual(b"PS Touch icon", archive.read("shell/res/icon.png"))
 
     def test_rejects_unclassified_resource_differences(self):
         with tempfile.TemporaryDirectory() as temp:
