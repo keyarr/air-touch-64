@@ -1,27 +1,32 @@
 package dev.airtouch64.app.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 
-private val LightColors = lightColorScheme(
-    primary = BlueLight,
-    secondary = SecondaryLight,
-    tertiary = GreenLight,
-)
-
-private val DarkColors = darkColorScheme(
-    primary = BlueDark,
-    secondary = SecondaryDark,
-    tertiary = GreenDark,
+private val DarkroomColorScheme = darkColorScheme(
+    primary = AdobeCyan,
+    onPrimary = DarkroomVoid,
+    primaryContainer = AdobeCyanMuted,
+    onPrimaryContainer = AdobeCyan,
+    secondary = TextSecondary,
+    onSecondary = DarkroomVoid,
+    surface = DarkroomVoid,
+    onSurface = TextPrimary,
+    surfaceContainer = DarkroomPanel,
+    surfaceVariant = DarkroomCard,
+    onSurfaceVariant = TextSecondary,
+    outline = DarkroomBorder,
+    outlineVariant = DarkroomBorderHigh,
+    error = StatusError,
+    onError = DarkroomVoid,
+    errorContainer = StatusErrorBg,
+    onErrorContainer = StatusError,
+    tertiary = StatusSuccess,
+    onTertiary = DarkroomVoid,
 )
 
 @Composable
 fun AirTouchTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors,
-        content = content,
-    )
+    MaterialTheme(colorScheme = DarkroomColorScheme, content = content)
 }

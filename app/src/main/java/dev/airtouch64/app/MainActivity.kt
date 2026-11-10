@@ -1,5 +1,7 @@
 package dev.airtouch64.app
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -11,6 +13,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -21,16 +24,17 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -40,6 +44,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,7 +60,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import dev.airtouch64.app.ui.theme.AdobeCyan
+import dev.airtouch64.app.ui.theme.AdobeCyanMuted
 import dev.airtouch64.app.ui.theme.AirTouchTheme
+import dev.airtouch64.app.ui.theme.DarkroomBorder
+import dev.airtouch64.app.ui.theme.DarkroomCard
+import dev.airtouch64.app.ui.theme.DarkroomPanel
+import dev.airtouch64.app.ui.theme.DarkroomVoid
+import dev.airtouch64.app.ui.theme.StatusError
+import dev.airtouch64.app.ui.theme.StatusErrorBg
+import dev.airtouch64.app.ui.theme.StatusSuccess
+import dev.airtouch64.app.ui.theme.StatusSuccessBg
+import dev.airtouch64.app.ui.theme.TextMuted
+import dev.airtouch64.app.ui.theme.TextMonospace
 import dev.airtouch64.engine.PatchResult
 import java.io.File
 
@@ -115,10 +132,10 @@ private fun ManagerApp(
 ) {
     val state = viewModel.state
     Scaffold { padding ->
-        Surface(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Surface(modifier = Modifier.fillMaxSize().padding(padding), color = MaterialTheme.colorScheme.surface) {
             when (val current = state) {
                 UiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+                    CircularProgressIndicator(color = AdobeCyan)
                 }
                 is UiState.Home -> HomeScreen(current, viewModel::importSource, viewModel::start)
                 is UiState.Running -> RunningScreen(current)
@@ -135,12 +152,24 @@ private fun ContentColumn(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     BoxWithConstraints(modifier.fillMaxSize()) {
-        val horizontalPadding = if (maxWidth > 680.dp) (maxWidth - 640.dp) / 2 else 20.dp
+        val horizontalPadding = if (maxWidth >= 600.dp) (maxWidth - 640.dp).coerceAtLeast(0.dp) / 2 else 16.dp
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = horizontalPadding, vertical = 20.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = horizontalPadding, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
             content = content,
         )
+    }
+}
+
+@Composable
+private fun Panel(content: @Composable ColumnScope.() -> Unit) {
+    val shape = RoundedCornerShape(6.dp)
+    Surface(
+        modifier = Modifier.fillMaxWidth().border(1.dp, DarkroomBorder, shape),
+        shape = shape,
+        color = DarkroomPanel,
+    ) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
     }
 }
 
@@ -154,76 +183,82 @@ private fun HomeScreen(state: UiState.Home, onPick: (Uri) -> Unit, onStart: () -
         AppHeader()
         val bundle = state.bundle
         val source = state.source
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
-            Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(stringResource(R.string.source_apk), style = MaterialTheme.typography.titleMedium)
-                Text(
-                    stringResource(R.string.supported_version),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Panel {
+            Text(stringResource(R.string.source_apk).uppercase(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                stringResource(R.string.supported_version),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { sourcePicker.launch(arrayOf("*/*")) },
+                    enabled = !state.importingSource,
+                    modifier = Modifier.weight(1f).height(40.dp),
+                    shape = RoundedCornerShape(4.dp),
+                    border = ButtonDefaults.outlinedButtonBorder(enabled = !state.importingSource),
+                ) {
+                    Text(stringResource(if (source == null) R.string.choose_apk else R.string.change_apk), maxLines = 1)
+                }
+                OutlinedButton(
+                    onClick = { showApkHelp = true },
+                    enabled = !state.importingSource,
+                    modifier = Modifier.weight(1f).height(40.dp),
+                    shape = RoundedCornerShape(4.dp),
+                ) {
+                    Text(stringResource(R.string.no_apk), maxLines = 1)
+                }
+            }
+            if (state.importingSource) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = AdobeCyan)
+                    Spacer(Modifier.width(10.dp))
+                    Text(stringResource(R.string.reading_apk), style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            if (source != null) {
+                val supported = source.inspection.supported
+                HorizontalDivider(color = if (supported) StatusSuccess else StatusError, thickness = 2.dp)
+                StatusBadge(
+                    text = stringResource(if (supported) R.string.apk_compatible else R.string.apk_incompatible).uppercase(),
+                    color = if (supported) StatusSuccess else StatusError,
+                    background = if (supported) StatusSuccessBg else StatusErrorBg,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = { sourcePicker.launch(arrayOf("*/*")) },
-                        enabled = !state.importingSource,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text(stringResource(if (source == null) R.string.choose_apk else R.string.change_apk), maxLines = 1)
+                Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        MetadataValue("ARQUIVO", source.name)
+                        MetadataValue("ENTRADAS", "${source.inspection.entryCount} arquivos")
                     }
-                    OutlinedButton(
-                        onClick = { showApkHelp = true },
-                        enabled = !state.importingSource,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text(stringResource(R.string.no_apk), maxLines = 1)
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        MetadataValue("TAMANHO", "${source.inspection.size / 1024 / 1024} MiB")
+                        HashValue("SHA-256", source.inspection.sha256)
                     }
                 }
-                if (state.importingSource) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(10.dp))
-                        Text(stringResource(R.string.reading_apk), style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-                if (source != null) {
-                    HorizontalDivider()
-                    Text(source.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text(
-                        stringResource(R.string.source_details, source.inspection.sha256.take(16), source.inspection.size / 1024 / 1024, source.inspection.entryCount),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    val supported = source.inspection.supported
-                    Text(
-                        stringResource(if (supported) R.string.apk_compatible else R.string.apk_incompatible),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = if (supported) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.error,
-                    )
-                    if (!supported && source.inspection.missingEntries.isNotEmpty()) {
+                if (!supported && source.inspection.missingEntries.isNotEmpty()) {
+                    Surface(color = StatusErrorBg, shape = RoundedCornerShape(4.dp)) {
                         Text(
                             stringResource(R.string.missing_files, source.inspection.missingEntries.joinToString(", ")),
+                            Modifier.fillMaxWidth().padding(10.dp),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
+                            color = StatusError,
                         )
                     }
                 }
-                state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
             }
+            state.error?.let { Text(it, color = StatusError, style = MaterialTheme.typography.bodyMedium) }
         }
 
-        if (bundle != null) Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
-            Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(stringResource(R.string.included_patches), style = MaterialTheme.typography.titleMedium)
-                    Text(stringResource(R.string.version, "1.0.0"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                bundle.header.steps.forEachIndexed { index, step ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("${index + 1}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(stepTitle(step.id, step.name), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-                            Text(stepDescription(step.id, step.description), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+        if (bundle != null) Panel {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(stringResource(R.string.included_patches).uppercase(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.version, "1.0.0"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            bundle.header.steps.forEachIndexed { index, step ->
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+                    Text("[${(index + 1).toString().padStart(2, '0')}]", style = MaterialTheme.typography.labelMedium, color = TextMuted, fontFamily = FontFamily.Monospace)
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(stepTitle(step.id, step.name).uppercase(), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        Text(stepDescription(step.id, step.description), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -234,26 +269,88 @@ private fun HomeScreen(state: UiState.Home, onPick: (Uri) -> Unit, onStart: () -
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Button(
+        PrimaryAction(
             onClick = onStart,
             enabled = source?.inspection?.supported == true && !state.importingSource,
-            modifier = Modifier.fillMaxWidth().height(56.dp),
-        ) { Text(stringResource(R.string.apply_patches)) }
+            modifier = Modifier.fillMaxWidth().height(50.dp),
+        ) { Text("INICIAR PATCH ARM64", fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp) }
     }
     if (showApkHelp) ApkHelpDialog(onDismiss = { showApkHelp = false })
 }
 
 @Composable
 private fun AppHeader() {
-    Text(
-        "AIR TOUCH 64",
-        modifier = Modifier.fillMaxWidth(),
-        style = MaterialTheme.typography.headlineSmall,
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Bold,
-        letterSpacing = 2.sp,
-        textAlign = TextAlign.Center,
-    )
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().height(48.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text("AIR TOUCH 64", fontSize = 14.sp, lineHeight = 16.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+                Text("ARM64 INJECTOR · V1.3.7 REVIVAL", Modifier.offset(y = 2.dp), fontSize = 8.sp, lineHeight = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 0.4.sp)
+            }
+            Surface(
+                modifier = Modifier.size(30.dp).border(1.dp, AdobeCyan, RoundedCornerShape(2.dp)),
+                color = AdobeCyanMuted,
+                shape = RoundedCornerShape(2.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text("PS", color = AdobeCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+        HorizontalDivider(color = DarkroomBorder)
+    }
+}
+
+@Composable
+private fun StatusBadge(text: String, color: androidx.compose.ui.graphics.Color, background: androidx.compose.ui.graphics.Color) {
+    Surface(color = background, shape = RoundedCornerShape(3.dp)) {
+        Text(text, Modifier.padding(horizontal = 7.dp, vertical = 4.dp), color = color, fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+    }
+}
+
+@Composable
+private fun MetadataValue(label: String, value: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 0.6.sp)
+        Text(value, style = MaterialTheme.typography.bodySmall, color = TextMonospace, fontFamily = FontFamily.Monospace, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun HashValue(label: String, value: String) {
+    val context = LocalContext.current
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 0.6.sp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(value.take(12) + "…", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = TextMonospace, fontFamily = FontFamily.Monospace)
+            TextButton(onClick = { copyToClipboard(context, label, value) }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
+                Text("COPIAR", fontSize = 9.sp, color = AdobeCyan)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PrimaryAction(
+    onClick: () -> Unit,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier,
+        shape = RoundedCornerShape(4.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = AdobeCyan,
+            contentColor = DarkroomVoid,
+            disabledContainerColor = DarkroomCard,
+            disabledContentColor = TextMuted,
+        ),
+    ) { content() }
 }
 
 @Composable
@@ -299,6 +396,7 @@ private fun ApkHelpDialog(onDismiss: () -> Unit) {
                             onDismiss()
                         },
                         modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(4.dp),
                     ) { Text("APKMirror", maxLines = 1) }
                     OutlinedButton(
                         onClick = {
@@ -306,6 +404,7 @@ private fun ApkHelpDialog(onDismiss: () -> Unit) {
                             onDismiss()
                         },
                         modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(4.dp),
                     ) { Text("Apkpure", maxLines = 1) }
                 }
                 Text(
@@ -316,97 +415,139 @@ private fun ApkHelpDialog(onDismiss: () -> Unit) {
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) } },
+        containerColor = DarkroomPanel,
+        shape = RoundedCornerShape(6.dp),
     )
 }
 
 @Composable
 private fun RunningScreen(state: UiState.Running) {
+    val total = state.header.steps.size
+    val completeCount = state.completed.size
+    val progress = if (total == 0) 0f else ((completeCount + if (state.currentStep != null) 0.5f else 0f) / total).coerceIn(0f, 1f)
     ContentColumn {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.5.dp)
-            Column {
-                Text(stringResource(R.string.applying_patches), style = MaterialTheme.typography.titleLarge)
-                Text(stringResource(R.string.do_not_close), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        AppHeader()
+        Panel {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.applying_patches).uppercase(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text("${(progress * 100).toInt()}%", fontFamily = FontFamily.Monospace, color = AdobeCyan, fontSize = 12.sp)
             }
+            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(4.dp), color = AdobeCyan, trackColor = DarkroomCard)
+            Text(
+                state.currentStep?.let { id -> state.header.steps.firstOrNull { it.id == id }?.let { stepTitle(it.id, it.name).uppercase() } } ?: stringResource(R.string.do_not_close).uppercase(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontFamily = FontFamily.Monospace,
+            )
         }
-        val total = state.header.steps.size
-        val completeCount = state.completed.size
-        LinearProgressIndicator(
-            progress = {
-                if (total == 0) 0f else ((completeCount + if (state.currentStep != null) 0.5f else 0f) / total).coerceIn(0f, 1f)
-            },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
-            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                state.header.steps.forEach { step ->
-                    val done = step.id in state.completed
-                    val running = step.id == state.currentStep
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(
-                            when { done -> stringResource(R.string.step_done, stepTitle(step.id, step.name)); running -> stringResource(R.string.step_running, stepTitle(step.id, step.name)); else -> stepTitle(step.id, step.name) },
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = when { done -> MaterialTheme.colorScheme.tertiary; running -> MaterialTheme.colorScheme.primary; else -> MaterialTheme.colorScheme.onSurfaceVariant },
-                            fontWeight = if (running) FontWeight.SemiBold else FontWeight.Normal,
-                        )
+        Panel {
+            state.header.steps.forEachIndexed { index, step ->
+                val done = step.id in state.completed
+                val running = step.id == state.currentStep
+                val marker = when { done -> "[✓]"; running -> "[▶]"; else -> "[ ]" }
+                val color = when { done -> StatusSuccess; running -> AdobeCyan; else -> TextMuted }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
+                    Text(marker, color = color, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(stepTitle(step.id, step.name).uppercase(), style = MaterialTheme.typography.bodyMedium, color = if (running) AdobeCyan else MaterialTheme.colorScheme.onSurface, fontWeight = if (running) FontWeight.SemiBold else FontWeight.Medium)
                         Text(stepDescription(step.id, step.description), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    Text("${(index + 1).toString().padStart(2, '0')}", color = TextMuted, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
                 }
             }
         }
-        LogCard(state.log)
+        LogCard(state.log, maxLines = 60, active = true)
     }
 }
 
 @Composable
-private fun LogCard(log: List<String>) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(stringResource(R.string.log), style = MaterialTheme.typography.titleSmall)
-            if (log.isEmpty()) Text(stringResource(R.string.waiting), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            log.takeLast(40).forEach { line ->
-                Text(line, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun LogCard(log: List<String>, maxLines: Int = 60, active: Boolean = false) {
+    val scrollState = rememberScrollState()
+    LaunchedEffect(log.size) { scrollState.animateScrollTo(scrollState.maxValue) }
+    Column(
+        Modifier.fillMaxWidth().border(1.dp, DarkroomBorder, RoundedCornerShape(4.dp)),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(stringResource(R.string.log).uppercase(), Modifier.padding(start = 12.dp, top = 10.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(
+            Modifier.fillMaxWidth().height(240.dp).verticalScroll(scrollState).padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            if (log.isEmpty()) Text(stringResource(R.string.waiting), style = MaterialTheme.typography.bodySmall, color = TextMuted)
+            log.takeLast(maxLines).forEach { line ->
+                Text(line, style = MaterialTheme.typography.bodySmall, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = TextMonospace)
             }
         }
+        if (active) HorizontalDivider(color = AdobeCyan.copy(alpha = 0.45f), thickness = 1.dp)
     }
 }
 
 @Composable
 private fun DoneScreen(result: PatchResult, onInstall: (File) -> Unit, onSave: (File) -> Unit, onReset: () -> Unit) {
     ContentColumn {
-        Text(stringResource(R.string.apk_ready), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.tertiary)
-        Text(stringResource(R.string.patches_applied), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
-            Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                LabeledValue(stringResource(R.string.file), result.output.name)
-                LabeledValue(stringResource(R.string.size), "${result.size / 1024 / 1024} MiB")
-                LabeledValue(stringResource(R.string.entries), result.entries.toString())
-                LabeledValue("SHA-256", result.sha256.chunked(32).joinToString("\n"))
-                LabeledValue(stringResource(R.string.signature), result.signerFingerprint.chunked(32).joinToString("\n"))
-            }
+        AppHeader()
+        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("✓", color = StatusSuccess, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.apk_ready).uppercase(), style = MaterialTheme.typography.titleLarge, color = StatusSuccess, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+            Text(stringResource(R.string.patches_applied), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
         }
-        Button(onClick = { onInstall(result.output) }, modifier = Modifier.fillMaxWidth().height(56.dp)) { Text(stringResource(R.string.install)) }
-        OutlinedButton(onClick = { onSave(result.output) }, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text(stringResource(R.string.save_apk)) }
-        TextButton(onClick = onReset, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text(stringResource(R.string.back)) }
+        Panel {
+            LabeledValue("ARQUIVO DE SAÍDA", result.output.name)
+            HorizontalDivider(color = DarkroomBorder)
+            LabeledValue("TAMANHO FINAL", "${result.size / 1024 / 1024} MiB")
+            HorizontalDivider(color = DarkroomBorder)
+            LabeledValue("ENTRADAS TOTAIS", "${result.entries} entradas")
+            HorizontalDivider(color = DarkroomBorder)
+            LabeledValue("SHA-256 DO PACOTE", result.sha256.chunked(32).joinToString("\n"))
+            HorizontalDivider(color = DarkroomBorder)
+            LabeledValue("FINGERPRINT DA CHAVE", result.signerFingerprint.chunked(32).joinToString("\n"))
+        }
+        PrimaryAction(onClick = { onInstall(result.output) }, enabled = true, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+            Text(stringResource(R.string.install).uppercase(), fontWeight = FontWeight.Bold)
+        }
+        OutlinedButton(onClick = { onSave(result.output) }, modifier = Modifier.fillMaxWidth().height(44.dp), shape = RoundedCornerShape(4.dp)) {
+            Text(stringResource(R.string.save_apk).uppercase())
+        }
+        TextButton(onClick = onReset, modifier = Modifier.fillMaxWidth().height(40.dp)) { Text("PROCESSAR OUTRO APK", color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
 
 @Composable
 private fun FailedScreen(state: UiState.Failed, onReset: () -> Unit) {
+    val context = LocalContext.current
     ContentColumn {
-        Text(stringResource(R.string.could_not_complete), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.error)
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
-            Text(state.message, Modifier.fillMaxWidth().padding(16.dp), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onErrorContainer)
+        AppHeader()
+        Panel {
+            HorizontalDivider(color = StatusError, thickness = 2.dp)
+            Text(stringResource(R.string.could_not_complete).uppercase(), style = MaterialTheme.typography.titleLarge, color = StatusError, fontWeight = FontWeight.Bold)
+            Surface(color = StatusErrorBg, shape = RoundedCornerShape(4.dp)) {
+                Text(state.message, Modifier.fillMaxWidth().padding(12.dp), style = MaterialTheme.typography.bodyMedium, color = StatusError)
+            }
         }
-        if (state.log.isNotEmpty()) LogCard(state.log)
-        Button(onClick = onReset, modifier = Modifier.fillMaxWidth().height(56.dp)) { Text(stringResource(R.string.back)) }
+        if (state.log.isNotEmpty()) {
+            LogCard(state.log, maxLines = Int.MAX_VALUE)
+            OutlinedButton(
+                onClick = { copyToClipboard(context, "Air Touch 64 diagnostic", state.log.joinToString("\n")) },
+                modifier = Modifier.fillMaxWidth().height(44.dp),
+                shape = RoundedCornerShape(4.dp),
+            ) { Text("COPIAR DIAGNÓSTICO") }
+        }
+        OutlinedButton(onClick = onReset, modifier = Modifier.fillMaxWidth().height(44.dp), shape = RoundedCornerShape(4.dp)) {
+            Text("VOLTAR AO INÍCIO")
+        }
     }
 }
 
 @Composable
 private fun LabeledValue(label: String, value: String) {
     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, softWrap = true)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 0.6.sp)
+        Text(value, style = MaterialTheme.typography.bodySmall, color = TextMonospace, fontFamily = FontFamily.Monospace, softWrap = true)
     }
+}
+
+private fun copyToClipboard(context: android.content.Context, label: String, value: String) {
+    val clipboard = context.getSystemService(ClipboardManager::class.java)
+    clipboard.setPrimaryClip(ClipData.newPlainText(label, value))
+    Toast.makeText(context, "Copiado", Toast.LENGTH_SHORT).show()
 }
