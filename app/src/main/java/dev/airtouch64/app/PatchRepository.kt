@@ -17,10 +17,8 @@ class PatchRepository(private val context: Context) {
     private val bundleFile = File(context.filesDir, "bundle/bundle.at64")
 
     fun loadSavedBundle(): BundleSelection {
-        if (!bundleFile.isFile) {
-            bundleFile.parentFile!!.mkdirs()
-            context.assets.open("bundle.at64").use { input -> bundleFile.outputStream().use(input::copyTo) }
-        }
+        bundleFile.parentFile!!.mkdirs()
+        context.assets.open("bundle.at64").use { input -> bundleFile.outputStream().use(input::copyTo) }
         val header = engine.readHeader(bundleFile)
         return BundleSelection(bundleFile, header.name, header)
     }
