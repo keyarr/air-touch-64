@@ -22,6 +22,7 @@ data class SourceSelection(val file: File, val name: String, val inspection: Sou
 sealed interface UiState {
     data object Loading : UiState
     data class Home(
+        val bundles: List<BundleSelection> = emptyList(),
         val bundle: BundleSelection? = null,
         val source: SourceSelection? = null,
         val importingSource: Boolean = false,
@@ -46,14 +47,16 @@ class PatchViewModel(application: Application) : AndroidViewModel(application) {
             val result = runCatching { withContext(Dispatchers.IO) {
                 val name = repository.displayName(uri)
                 val file = repository.importSource(uri, name)
-                val bundle = home.bundle ?: error("Embedded bundle is unavailable")
+                val bundle = repository.selectBundle(file, home.bundles)
+                    ?: home.bundles.firstOrNull()
+                    ?: error("Embedded bundles are unavailable")
                 val inspection = repository.inspect(file, bundle.header)
-                file to (name to inspection)
+                Triple(file, name to inspection, bundle)
             } }
             state = result.fold(
-                { (file, details) ->
+                { (file, details, bundle) ->
                     val (name, inspection) = details
-                    home.copy(source = SourceSelection(file, name, inspection), importingSource = false)
+                    home.copy(source = SourceSelection(file, name, inspection), bundle = bundle, importingSource = false)
                 },
                 { error -> home.copy(importingSource = false, error = error.message ?: getApplication<Application>().getString(R.string.import_failed)) },
             )
@@ -95,8 +98,8 @@ class PatchViewModel(application: Application) : AndroidViewModel(application) {
     fun reset() {
         state = UiState.Loading
         viewModelScope.launch {
-            val bundle = withContext(Dispatchers.IO) { repository.loadSavedBundle() }
-            state = UiState.Home(bundle = bundle)
+            val bundles = withContext(Dispatchers.IO) { repository.loadSavedBundles() }
+            state = UiState.Home(bundles = bundles, bundle = bundles.firstOrNull())
         }
     }
 }

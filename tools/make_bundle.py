@@ -112,6 +112,11 @@ def main() -> None:
         action="store_true",
         help="allow a SWF delta for an experimental unsupported variant",
     )
+    parser.add_argument(
+        "--override-changed-resources",
+        action="store_true",
+        help="carry every changed resource as an override instead of a deterministic transform",
+    )
     parser.add_argument("--name", default="PS Touch Revived ARM64")
     parser.add_argument("--version", default="1.0.0")
     args = parser.parse_args()
@@ -177,6 +182,10 @@ def main() -> None:
     for name in sorted(final):
         if not name.startswith(RESOURCE_PREFIX):
             continue
+        if name not in source or source[name] != final[name]:
+            if args.override_changed_resources:
+                overrides.append({"entry": name, "bundlePath": f"overrides/{name}"})
+                continue
         if name not in source:
             if name not in ADDED_RESOURCE_ENTRIES:
                 raise SystemExit(f"unclassified resource difference: {name}")

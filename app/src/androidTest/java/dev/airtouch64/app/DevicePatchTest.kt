@@ -24,7 +24,7 @@ class DevicePatchTest {
         val repo = PatchRepository(context)
 
         // 1. Use the embedded audited bundle
-        val bundle = requireNotNull(repo.loadSavedBundle()) { "Import a bundle before running this test" }
+        val bundle = repo.loadSavedBundles().first { it.header.name == "PS Touch Revived ARM64" }
         assertEquals("PS Touch Revived ARM64", bundle.header.name)
 
         // 2. Exercise BouncyCastle certificate generation and KeyStore on Android
@@ -85,5 +85,35 @@ class DevicePatchTest {
             exported.outputStream().use { output -> input.copyTo(output) }
         }
         println("Patched APK written to ${exported.absolutePath}, size=${exported.length()}")
+    }
+
+    @Test
+    fun test177BundleSelectionAndLandscapeOutput() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val repo = PatchRepository(context)
+
+        val localSource = File(context.cacheDir, "test-source-177.apk")
+        if (!localSource.isFile || localSource.length() == 0L) {
+            val uiAutomation = InstrumentationRegistry.getInstrumentation().uiAutomation
+            val pfd = uiAutomation.executeShellCommand("cat /data/local/tmp/pstouch177-source.apk")
+            java.io.FileInputStream(pfd.fileDescriptor).use { input ->
+                localSource.outputStream().use { output -> input.copyTo(output) }
+            }
+            pfd.close()
+        }
+        assertTrue("Source APK must exist and be non-empty", localSource.isFile && localSource.length() > 0)
+
+        val bundle = requireNotNull(repo.selectBundle(localSource, repo.loadSavedBundles()))
+        assertEquals("Ps Touch 1.7.7 Landscape ARM64", bundle.header.name)
+        assertTrue("Source APK must be supported", repo.inspect(localSource, bundle.header).supported)
+
+        val result = repo.patch(localSource, bundle.file, repo.identity()) { }
+        assertEquals(443, result.entries)
+        ZipFile(result.output).use { apk ->
+            val descriptor = apk.getInputStream(apk.getEntry("assets/META-INF/AIR/application.xml")).use { input ->
+                input.readBytes().decodeToString()
+            }
+            assertTrue("Output must keep the landscape aspect ratio", descriptor.contains("<aspectRatio>landscape</aspectRatio>"))
+        }
     }
 }

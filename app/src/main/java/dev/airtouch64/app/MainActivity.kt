@@ -251,7 +251,7 @@ private fun HomeScreen(state: UiState.Home, onPick: (Uri) -> Unit, onStart: () -
         if (bundle != null) Panel {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(stringResource(R.string.included_patches).uppercase(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text(stringResource(R.string.version, "1.0.0"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.version, bundle.header.version), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             bundle.header.steps.forEachIndexed { index, step ->
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
@@ -287,7 +287,7 @@ private fun AppHeader() {
         ) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Text("AIR TOUCH 64", fontSize = 14.sp, lineHeight = 16.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
-                Text("ARM64 INJECTOR · V1.3.7 REVIVAL", Modifier.offset(y = 2.dp), fontSize = 8.sp, lineHeight = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 0.4.sp)
+                Text("ARM64 INJECTOR · V1.3.7 / V1.7.7", Modifier.offset(y = 2.dp), fontSize = 8.sp, lineHeight = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 0.4.sp)
             }
             Surface(
                 modifier = Modifier.size(30.dp).border(1.dp, AdobeCyan, RoundedCornerShape(2.dp)),

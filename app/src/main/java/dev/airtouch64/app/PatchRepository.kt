@@ -11,16 +11,26 @@ import dev.airtouch64.engine.SigningIdentity
 import dev.airtouch64.engine.SigningStore
 import dev.airtouch64.engine.SourceInspection
 import java.io.File
+import java.security.MessageDigest
 
 class PatchRepository(private val context: Context) {
     private val engine = PatchEngine(File(context.cacheDir, "engine"))
-    private val bundleFile = File(context.filesDir, "bundle/bundle.at64")
+    private val bundles = listOf("bundle.at64" to "bundle-1.3.7.at64", "bundle-1.7.7.at64" to "bundle-1.7.7.at64")
 
-    fun loadSavedBundle(): BundleSelection {
-        bundleFile.parentFile!!.mkdirs()
-        context.assets.open("bundle.at64").use { input -> bundleFile.outputStream().use(input::copyTo) }
-        val header = engine.readHeader(bundleFile)
-        return BundleSelection(bundleFile, header.name, header)
+    fun loadSavedBundles(): List<BundleSelection> {
+        val dir = File(context.filesDir, "bundle").apply { mkdirs() }
+        return bundles.map { (asset, name) ->
+            val file = File(dir, name)
+            context.assets.open(asset).use { input -> file.outputStream().use(input::copyTo) }
+            val header = engine.readHeader(file)
+            BundleSelection(file, header.name, header)
+        }
+    }
+
+    fun selectBundle(source: File, bundles: List<BundleSelection>): BundleSelection? {
+        val sha256 = MessageDigest.getInstance("SHA-256").digest(source.readBytes())
+            .joinToString("") { "%02x".format(it) }
+        return bundles.firstOrNull { sha256 in it.header.source.sha256 }
     }
 
     fun displayName(uri: Uri): String {
