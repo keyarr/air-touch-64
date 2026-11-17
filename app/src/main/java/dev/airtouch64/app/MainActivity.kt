@@ -389,23 +389,47 @@ private fun ApkHelpDialog(onDismiss: () -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(stringResource(R.string.apk_download_options))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.apkmirror.com/apk/adobe/adobe-photoshop-touch-phone/ps-touch-1-3-7-release/")))
-                            onDismiss()
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(4.dp),
-                    ) { Text("APKMirror", maxLines = 1) }
-                    OutlinedButton(
-                        onClick = {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://apkpure.net/br/adobe-photoshop-touch/air.com.adobe.pstouchphone/download")))
-                            onDismiss()
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(4.dp),
-                    ) { Text("Apkpure", maxLines = 1) }
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Photoshop Touch 1.3.7")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.apkmirror.com/apk/adobe/adobe-photoshop-touch-phone/ps-touch-1-3-7-release/")))
+                                onDismiss()
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(4.dp),
+                        ) { Text("APKMirror", maxLines = 1) }
+                        OutlinedButton(
+                            onClick = {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://apkpure.net/br/adobe-photoshop-touch/air.com.adobe.pstouchphone/download")))
+                                onDismiss()
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(4.dp),
+                        ) { Text("APKPure", maxLines = 1) }
+                    }
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Photoshop Touch 1.7.7")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://apkpure.net/br/adobe-photoshop-touch/air.com.adobe.pstouch/download")))
+                                onDismiss()
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(4.dp),
+                        ) { Text("APKPure", maxLines = 1) }
+                        OutlinedButton(
+                            onClick = {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.apkmirror.com/apk/adobe/adobe-photoshop-touch/ps-touch-2-1-7-7-release/adobe-photoshop-touch-1-7-7-android-apk-download/")))
+                                onDismiss()
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(4.dp),
+                        ) { Text("APKMirror", maxLines = 1) }
+                    }
                 }
                 Text(
                     stringResource(R.string.third_party_disclaimer),
