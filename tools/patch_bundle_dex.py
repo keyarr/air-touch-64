@@ -110,7 +110,7 @@ def patch_surface_changed_smali(smali_text: str) -> str:
         f"\n    :pscc_use_insets\n"
         f"    invoke-virtual {{p0}}, Landroid/view/View;->getRootWindowInsets()Landroid/view/WindowInsets;\n"
         f"\n    move-result-object {scratch}\n"
-        f"\n    if-eqz {scratch}, :pscc_ime_present\n"
+        f"\n    if-eqz {scratch}, :pscc_ime_absent\n"
         f"\n    const/16 {inset_type}, 0x8\n"
         f"\n    invoke-virtual {{{scratch}, {inset_type}}}, Landroid/view/WindowInsets;->getInsets(I)Landroid/graphics/Insets;\n"
         f"\n    move-result-object {scratch}\n"
